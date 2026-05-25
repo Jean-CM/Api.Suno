@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Summary = {
   artistas: number;
@@ -45,7 +45,7 @@ type Props = {
 
 type ApiOptions = {
   method?: 'GET' | 'POST';
-  headers?: Record<string, string>;
+  apiKey?: string;
   body?: string;
 };
 
@@ -56,13 +56,18 @@ Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Syn
 
 const STORAGE_KEY = 'jatune_api_key';
 
+function buildHeaders(apiKey?: string): HeadersInit {
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/json');
+  const cleanKey = apiKey?.trim();
+  if (cleanKey) headers.set('x-api-key', cleanKey);
+  return headers;
+}
+
 async function apiRequest(path: string, options: ApiOptions = {}) {
   const response = await fetch(path, {
     method: options.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
+    headers: buildHeaders(options.apiKey),
     body: options.body,
   });
 
@@ -84,15 +89,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const [message, setMessage] = useState('');
   const [filter, setFilter] = useState('Todos');
 
-  const apiHeaders = useMemo<Record<string, string>>(() => {
-    const cleanKey = apiKey.trim();
-    return cleanKey.length > 0 ? { 'x-api-key': cleanKey } : {};
-  }, [apiKey]);
-
-  const filteredTracks = useMemo(() => {
-    if (filter === 'Todos') return tracks;
-    return tracks.filter((track) => track.estado === filter);
-  }, [filter, tracks]);
+  const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
 
   const saveKeyPreference = (key: string, remember: boolean) => {
     if (remember && key.trim()) {
@@ -131,7 +128,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     try {
       const data = await apiRequest('/api/catalog/import', {
         method: 'POST',
-        headers: apiHeaders,
+        apiKey,
         body: JSON.stringify({ text: bulkText }),
       });
 
@@ -154,7 +151,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     try {
       const data = await apiRequest('/api/catalog/generate-pending', {
         method: 'POST',
-        headers: apiHeaders,
+        apiKey,
         body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
       });
 
@@ -168,7 +165,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     }
   };
 
-  const metricCards = [
+  const metricCards: Array<[string, number, string]> = [
     ['Artistas', summary.artistas, 'text-yellow-200'],
     ['Workspaces', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
     ['Álbumes / EPs', summary.albumes, 'text-violet-300'],
@@ -180,7 +177,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     <div className="space-y-6 pb-24">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {metricCards.map(([label, value, colorClass]) => (
-          <div key={String(label)} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl">
+          <div key={label} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl">
             <p className="text-sm text-slate-400">{label}</p>
             <p className={`mt-2 text-3xl font-black ${colorClass}`}>{value}</p>
           </div>
