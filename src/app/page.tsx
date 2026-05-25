@@ -1,3 +1,5 @@
+import JatuneControlPanel from './components/JatuneControlPanel';
+import { getCatalogRows, getCatalogSummary } from '@/lib/JatuneCatalog';
 import { sunoApi } from '@/lib/SunoApi';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +45,8 @@ const getUsagePercent = (usage?: number, limit?: number) => {
 
 export default async function Home() {
   const data = await getDashboardData();
+  const summary = getCatalogSummary();
+  const tracks = getCatalogRows();
   const limit = data.limit || {};
   const usagePercent = getUsagePercent(limit.monthly_usage, limit.monthly_limit);
   const statusLabel = data.ok ? 'Operativo' : 'Requiere atención';
@@ -65,7 +69,7 @@ export default async function Home() {
                 Centro de Control Musical
               </h1>
               <p className="mt-4 max-w-3xl text-base text-slate-300 lg:text-lg">
-                Motor conectado a Suno, desplegado en Render y listo para operar con visión ejecutiva: créditos, estado del servicio y próximos módulos de producción.
+                Cabina central para operar el catálogo completo: créditos, carga masiva, generación desde pendientes e historial musical en Render.
               </p>
             </div>
             <div className={`w-fit rounded-2xl border px-5 py-4 text-sm font-bold ${statusClass}`}>
@@ -148,10 +152,10 @@ export default async function Home() {
             <h2 className="text-2xl font-black">Roadmap inmediato</h2>
             <div className="mt-6 space-y-4">
               {[
-                ['01', 'Proteger endpoints con JATUNE_API_KEY'],
-                ['02', 'Crear historial de generaciones'],
-                ['03', 'Agregar cola para álbumes y EPs'],
-                ['04', 'Conectar frontend Streamlit/Panel admin']
+                ['01', 'Carga masiva Artista → Proyecto → Track'],
+                ['02', 'Generación desde canciones pendientes'],
+                ['03', 'Historial con audio_url y clip_id'],
+                ['04', 'Persistencia con disco/DB en Render']
               ].map(([step, title]) => (
                 <div key={step} className="flex gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-300 text-sm font-black text-slate-950">{step}</span>
@@ -162,8 +166,10 @@ export default async function Home() {
           </div>
         </div>
 
+        <JatuneControlPanel initialSummary={summary} initialTracks={tracks} />
+
         <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 text-sm text-slate-400">
-          <strong className="text-slate-200">Endpoint base:</strong> https://api-suno-nptk.onrender.com · <strong className="text-slate-200">Prueba:</strong> /api/get_limit · <strong className="text-slate-200">Producción:</strong> usar API key antes de abrirlo al público.
+          <strong className="text-slate-200">Endpoint base:</strong> https://api-suno-nptk.onrender.com · <strong className="text-slate-200">Catálogo:</strong> /api/catalog/tracks · <strong className="text-slate-200">Importar:</strong> /api/catalog/import · <strong className="text-slate-200">Producción:</strong> configura JATUNE_API_KEY.
         </div>
       </div>
     </section>
