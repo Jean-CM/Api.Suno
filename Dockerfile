@@ -5,11 +5,12 @@ WORKDIR /src
 
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV npm_config_audit=false
 ENV npm_config_fund=false
 
 COPY package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci
 
 COPY . .
 RUN npm run build
@@ -24,7 +25,6 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV npm_config_audit=false
 ENV npm_config_fund=false
 
-# Chromium/Playwright runtime dependencies for Render/Docker.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     libnss3 \
     libdbus-1-3 \
@@ -42,21 +42,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-
-# Install production dependencies first. Do not use `npx playwright install` here,
-# because it can fetch a newer Playwright browser revision than rebrowser-playwright-core expects.
-RUN npm ci --omit=dev --no-audit --no-fund
-
-# Install the exact Chromium revision expected by the installed rebrowser-playwright-core package.
-RUN node node_modules/rebrowser-playwright-core/cli.js install chromium
-
-# Verify the exact executable path exists before the image is accepted by Render.
-RUN node -e "const fs = require('fs'); const { chromium } = require('rebrowser-playwright-core'); const p = chromium.executablePath(); console.log('Rebrowser Chromium executable:', p); if (!fs.existsSync(p)) { console.error('Missing Chromium executable:', p); process.exit(1); }"
-
+COPY --from=builder /src/node_modules ./node_modules
 COPY --from=builder /src/.next ./.next
 COPY --from=builder /src/public ./public
 COPY --from=builder /src/next.config.mjs ./next.config.mjs
 
-# Render web services expect the app to bind to 0.0.0.0 and usually PORT=10000.
+RUN node node_modules/rebrowser-playwright-core/cli.js install chromium
+RUN node -e "const fs=require('fs');const {chromium}=require('rebrowser-playwright-core');const p=chromium.executablePath();console.log('Rebrowser Chromium executable:',p);if(!fs.existsSync(p)){process.exit(1)}"
+
 EXPOSE 10000
 CMD ["sh", "-c", "npm run start -- -p ${PORT:-10000} -H 0.0.0.0"]
