@@ -57,19 +57,19 @@ export default async function Home() {
   });
 
   return (
-    <section className="min-h-screen w-full bg-slate-950 px-3 py-5 text-white sm:px-5 lg:px-8 lg:py-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 sm:gap-6 lg:gap-7">
+    <section className="min-h-screen w-full bg-slate-950 px-3 py-5 text-white sm:px-5 lg:px-8 2xl:px-10 lg:py-8">
+      <div className="mx-auto flex w-full max-w-[1760px] flex-col gap-5 sm:gap-6 lg:gap-7">
         <div className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-5 shadow-2xl sm:p-7 lg:p-9">
           <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
               <p className="mb-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-yellow-200">
                 JATune Production
               </p>
-              <h1 className="max-w-4xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
+              <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
                 Centro de Control Musical
               </h1>
-              <p className="mt-4 max-w-3xl text-sm text-slate-300 sm:text-base lg:text-lg">
-                Cabina central para operar catálogo, créditos, carga masiva, workspaces y generación musical desde Render.
+              <p className="mt-4 max-w-4xl text-sm text-slate-300 sm:text-base lg:text-lg">
+                Cabina central para operar catálogo, créditos, carga masiva, workspaces lógicos y generación musical desde Render.
               </p>
             </div>
 
