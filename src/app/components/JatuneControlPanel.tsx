@@ -90,8 +90,9 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     refreshCatalog().catch(() => undefined);
   }, []);
 
-  const apiHeaders = useMemo(() => {
-    return apiKey.trim() ? { 'x-api-key': apiKey.trim() } : {};
+  const apiHeaders = useMemo<Record<string, string>>(() => {
+    const cleanKey = apiKey.trim();
+    return cleanKey ? { 'x-api-key': cleanKey } : {};
   }, [apiKey]);
 
   const saveKeyPreference = (key: string, remember: boolean) => {
