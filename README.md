@@ -1,361 +1,573 @@
-<div align="center">
-  <h1 align="center">
-      Suno AI API
-  </h1>
-  <p>Use API to call the music generation AI of Suno.ai and easily integrate it into agents like GPTs.</p>
-  <p>👉 We update quickly, please star.</p>
-</div>
-<p align="center">
-  <a target="_blank" href="./README.md">English</a> 
-  | <a target="_blank" href="./README_CN.md">简体中文</a> 
-  | <a target="_blank" href="./README_RU.md">русский</a> 
-  | <a target="_blank" href="https://suno.gcui.ai">Demo</a> 
-  | <a target="_blank" href="https://suno.gcui.ai/docs">Docs</a> 
-  | <a target="_blank" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgcui-art%2Fsuno-api&env=SUNO_COOKIE,TWOCAPTCHA_KEY,BROWSER,BROWSER_GHOST_CURSOR,BROWSER_LOCALE,BROWSER_HEADLESS&project-name=suno-api&repository-name=suno-api">Deploy with Vercel</a> 
-</p>
-<p align="center">
-  <a href="https://www.producthunt.com/products/gcui-art-suno-api-open-source-sunoai-api/reviews?utm_source=badge-product_review&utm_medium=badge&utm_souce=badge-gcui&#0045;art&#0045;suno&#0045;api&#0045;open&#0045;source&#0045;sunoai&#0045;api" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=577408&theme=light" alt="gcui&#0045;art&#0047;suno&#0045;api&#0058;Open&#0045;source&#0032;SunoAI&#0032;API - Use&#0032;API&#0032;to&#0032;call&#0032;the&#0032;music&#0032;generation&#0032;AI&#0032;of&#0032;suno&#0046;ai&#0046; | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
-</p>
+# JATune Production — Centro de Control Musical
 
-> 🔥 Check out my new project: [Linkly-ai-cli: A document search engine CLI, built for AI Agents.](https://github.com/LinklyAI/linkly-ai-cli)
+Backend y dashboard operativo para gestionar generación musical asistida por Suno desde Render. Este repositorio parte de `suno-api` y fue adaptado para el flujo de trabajo de **JATune Production**: monitoreo de créditos, catálogo musical, carga masiva, workspaces lógicos por álbum/EP/sencillo y generación desde canciones pendientes.
 
-![suno-api banner](https://github.com/gcui-art/suno-api/blob/main/public/suno-banner.png)
+> Estado actual: MVP funcional en Render. El backend ya valida créditos con `/api/get_limit` y el dashboard principal vive en `/`.
 
-## Introduction
+---
 
-Suno is an amazing AI music service. Although the official API is not yet available, we couldn't wait to integrate its capabilities somewhere.
+## Visión del proyecto
 
-We discovered that some users have similar needs, so we decided to open-source this project, hoping you'll like it.
+JATune Production busca funcionar como una mini disquera automatizada:
 
-This implementation uses the paid [2Captcha](https://2captcha.com/about) service (a.k.a. ruCaptcha) to solve the hCaptcha challenges automatically and does not use any already made closed-source paid Suno API implementations.
-
-## Demo
-
-We have deployed an example bound to a free Suno account, so it has daily usage limits, but you can see how it runs:
-[suno.gcui.ai](https://suno.gcui.ai)
-
-## Features
-
-- Perfectly implements the creation API from suno.ai.
-- Automatically keep the account active.
-- Solve CAPTCHAs automatically using [2Captcha](https://2captcha.com) and [Playwright](https://playwright.dev) with [rebrowser-patches](https://github.com/rebrowser/rebrowser-patches).
-- Compatible with the format of OpenAI’s `/v1/chat/completions` API.
-- Supports Custom Mode.
-- One-click deployment to [Vercel](#deploy-to-vercel) & [Docker](#docker).
-- In addition to the standard API, it also adapts to the API Schema of Agent platforms like GPTs and Coze, so you can use it as a tool/plugin/Action for LLMs and integrate it into any AI Agent.
-- Permissive open-source license, allowing you to freely integrate and modify.
-
-## Getting Started
-
-### 1. Obtain the cookie of your Suno account
-
-1. Head over to [suno.com/create](https://suno.com/create) using your browser.
-2. Open up the browser console: hit `F12` or access the `Developer Tools`.
-3. Navigate to the `Network` tab.
-4. Give the page a quick refresh.
-5. Identify the latest request that includes the keyword `?__clerk_api_version`.
-6. Click on it and switch over to the `Header` tab.
-7. Locate the `Cookie` section, hover your mouse over it, and copy the value of the Cookie.
-
-![get cookie](https://github.com/gcui-art/suno-api/blob/main/public/get-cookie-demo.gif)
-
-### 2. Register on 2Captcha and top up your balance
-[2Captcha](https://2captcha.com/about) is a paid CAPTCHA solving service that uses real workers to solve the CAPTCHA and has high accuracy. It is needed because of Suno constantly requesting hCaptcha solving that currently isn't possible for free by any means.
-
-[Create](https://2captcha.com/auth/register?userType=customer) a new 2Captcha account, [top up](https://2captcha.com/pay) your balance and [get your API key](https://2captcha.com/enterpage#recognition).
-
-> [!NOTE]
-> If you are located in Russia or Belarus, use the [ruCaptcha](https://rucaptcha.com) interface instead of 2Captcha. It's the same service, but it supports payments from those countries.
-
-> [!TIP]
-> If you want as few CAPTCHAs as possible, it is recommended to use a macOS system. macOS systems usually get fewer CAPTCHAs than Linux and Windows—this is due to its unpopularity in the web scraping industry. Running suno-api on Windows and Linux will work, but in some cases, you could get a pretty large number of CAPTCHAs.
-
-### 3. Clone and deploy this project
-
-You can choose your preferred deployment method:
-
-#### Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgcui-art%2Fsuno-api&env=SUNO_COOKIE,TWOCAPTCHA_KEY,BROWSER,BROWSER_GHOST_CURSOR,BROWSER_LOCALE,BROWSER_HEADLESS&project-name=suno-api&repository-name=suno-api)
-
-#### Run locally
-
-```bash
-git clone https://github.com/gcui-art/suno-api.git
-cd suno-api
-npm install
-```
-#### Docker
->[!IMPORTANT]
-> GPU acceleration will be disabled in Docker. If you have a slow CPU, it is recommended to [deploy locally](#run-locally).
-
-Alternatively, you can use [Docker Compose](https://docs.docker.com/compose/). However, follow the step below before running.
-
-```bash
-docker compose build && docker compose up
+```text
+Idea musical → Catálogo → Workspace → Track pendiente → Generación → Historial → Audio final
 ```
 
-### 4. Configure suno-api
+La arquitectura del catálogo se organiza así:
 
-- If deployed to Vercel, please add the environment variables in the Vercel dashboard.
+```text
+Artista
+└── Álbum / EP / Sencillo
+    └── Canción / Track
+```
 
-- If you’re running this locally, be sure to add the following to your `.env` file:
-#### Environment variables
-- `SUNO_COOKIE` — the `Cookie` header you obtained in the first step.
-- `TWOCAPTCHA_KEY` — your 2Captcha API key from the second step.
-- `BROWSER` — the name of the browser that is going to be used to solve the CAPTCHA. Only `chromium` and `firefox` supported.
-- `BROWSER_GHOST_CURSOR` — use ghost-cursor-playwright to simulate smooth mouse movements. Please note that it doesn't seem to make any difference in the rate of CAPTCHAs, so you can set it to `false`. Retained for future testing.
-- `BROWSER_LOCALE` — the language of the browser. Using either `en` or `ru` is recommended, since those have the most workers on 2Captcha. [List of supported languages](https://2captcha.com/2captcha-api#language)
-- `BROWSER_HEADLESS` — run the browser without the window. You probably want to set this to `true`.
-```bash
-SUNO_COOKIE=<…>
-TWOCAPTCHA_KEY=<…>
+Cada álbum, EP o sencillo también genera un **workspace lógico tipo Suno** para mantener control visual y operativo por proyecto.
+
+---
+
+## URL de producción
+
+```text
+https://api-suno-nptk.onrender.com
+```
+
+Rutas principales:
+
+```text
+/                         Dashboard JATune Production
+/api/get_limit             Prueba de créditos de Suno
+/api/generate              Generación musical por prompt
+/api/catalog/summary       Resumen del catálogo
+/api/catalog/tracks        Tracks del catálogo
+/api/catalog/workspaces    Workspaces lógicos
+/api/catalog/import        Importación masiva de catálogo
+/api/catalog/generate-pending  Generar siguiente canción pendiente
+```
+
+---
+
+## Funcionalidades JATune
+
+### Dashboard principal
+
+El dashboard en `/` muestra:
+
+- Estado operativo del backend.
+- Estado de cookie Suno.
+- Créditos disponibles.
+- Uso mensual.
+- Límite mensual.
+- Porcentaje de consumo.
+- Tarjetas de catálogo.
+- Carga masiva estructurada.
+- Workspaces tipo Suno.
+- Generación desde pendientes.
+- Catálogo musical filtrable.
+
+### Catálogo musical
+
+Campos principales:
+
+```text
+Artista
+Álbum / EP / Sencillo
+Tipo
+Canción
+Prompt musical
+Estado
+Audio URL
+Clip ID
+Workspace lógico
+```
+
+Estados de canción:
+
+```text
+Pendiente
+Generando
+Completada
+Error
+Reintentar
+Descartada
+Publicada
+Distribuida
+```
+
+Estados de workspace:
+
+```text
+Pendiente
+Creado
+Error
+Sincronizar
+```
+
+### Workspaces tipo Suno
+
+Al importar una carga masiva, el sistema crea un workspace lógico por proyecto.
+
+Ejemplo:
+
+```text
+Zyphorix | Galactic Vibe | EP | Nebula Dance | Dembow Dominicano, Bajo Pesado, 120 BPM
+Zyphorix | Galactic Vibe | EP | Solar Flare | Spatial Trap, Sintetizadores Futuristas
+```
+
+Crea el workspace lógico:
+
+```text
+Galactic Vibe · Zyphorix · EP
+```
+
+Y dentro quedan los tracks:
+
+```text
+Nebula Dance
+Solar Flare
+```
+
+> Próxima fase: sincronizar esos workspaces lógicos con los workspaces reales dentro de Suno mediante Playwright o endpoint interno autorizado/estable.
+
+---
+
+## Despliegue en Render
+
+### Tipo de servicio
+
+Usar:
+
+```text
+Web Service
+Runtime: Docker
+Branch: main
+Dockerfile Path: Dockerfile
+```
+
+El Dockerfile está preparado para:
+
+- Next.js.
+- Playwright.
+- Chromium.
+- Render `PORT=10000`.
+- Bind a `0.0.0.0`.
+- Evitar exponer `SUNO_COOKIE` durante build.
+
+### Variables de entorno recomendadas
+
+Configurar en Render → Environment:
+
+```env
+NODE_ENV=production
+PORT=10000
+SUNO_COOKIE=pega_aqui_tu_cookie_actual_de_suno
 BROWSER=chromium
 BROWSER_GHOST_CURSOR=false
-BROWSER_LOCALE=en
 BROWSER_HEADLESS=true
+BROWSER_LOCALE=en
+BROWSER_DISABLE_GPU=true
+JATUNE_API_KEY=crea_una_clave_privada_larga
+ALLOWED_ORIGIN=*
+JATUNE_DATA_DIR=/data
 ```
 
-### 5. Run suno-api
+Notas:
 
-- If you’ve deployed to Vercel:
-  - Please click on Deploy in the Vercel dashboard and wait for the deployment to be successful.
-  - Visit the `https://<vercel-assigned-domain>/api/get_limit` API for testing.
-- If running locally:
-  - Run `npm run dev`.
-  - Visit the `http://localhost:3000/api/get_limit` API for testing.
-- If the following result is returned:
+- `SUNO_COOKIE` debe ser una cookie vigente de Suno.
+- `JATUNE_API_KEY` protege acciones sensibles del dashboard, como importar catálogo y generar pendientes.
+- `ALLOWED_ORIGIN=*` sirve para pruebas. En producción se puede limitar al dominio del frontend.
+- `JATUNE_DATA_DIR=/data` requiere disco persistente en Render.
+
+### Disco persistente recomendado
+
+Para no perder el catálogo en redeploys, agregar un disco en Render:
+
+```text
+Name: jatune-data
+Mount Path: /data
+Size: 1 GB
+```
+
+Luego mantener:
+
+```env
+JATUNE_DATA_DIR=/data
+```
+
+El sistema guardará:
+
+```text
+/data/catalog.json
+```
+
+Sin disco persistente, el sistema usa `.jatune-data`, pero puede perderse en redeploys. Eso sirve para pruebas, no para operación seria.
+
+---
+
+## Seguridad operativa
+
+### API Key JATune
+
+Si `JATUNE_API_KEY` está configurada en Render, las rutas protegidas requieren el header:
+
+```http
+x-api-key: TU_CLAVE
+```
+
+En el dashboard hay un campo llamado **Clave operativa del dashboard**. Ahí se pega la misma clave definida en Render.
+
+Rutas protegidas:
+
+```text
+POST /api/catalog/import
+POST /api/catalog/generate-pending
+```
+
+Recomendación:
+
+- No compartir `JATUNE_API_KEY` en capturas.
+- No subir `.env` al repositorio.
+- Rotar `SUNO_COOKIE` si aparece en logs o capturas.
+
+---
+
+## Formato de carga masiva
+
+El formato esperado usa `|` como separador:
+
+```text
+Artista | Álbum/EP/Sencillo | Tipo | Canción | Prompt musical
+```
+
+Tipos válidos:
+
+```text
+Sencillo
+EP
+Álbum
+Album
+Single
+```
+
+Ejemplo:
+
+```text
+Zyphorix | Galactic Vibe | EP | Nebula Dance | Dembow Dominicano, Bajo Pesado, 120 BPM
+Zyphorix | Galactic Vibe | EP | Solar Flare | Spatial Trap, Sintetizadores Futuristas
+Velnora | Sentimiento Puro | Sencillo | Sabor Calle | Bachata Urbana, Guitarra Afilada
+Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Synth Latino, 95 BPM
+```
+
+Después de importar:
+
+1. Se crean artistas si no existen.
+2. Se crean álbumes/EPs/sencillos.
+3. Se crean canciones en estado `Pendiente`.
+4. Se crean workspaces lógicos por proyecto.
+5. El panel permite generar una canción pendiente por ejecución.
+
+---
+
+## Endpoints JATune
+
+### GET `/api/catalog/summary`
+
+Devuelve resumen ejecutivo del catálogo.
+
+Respuesta ejemplo:
 
 ```json
 {
-  "credits_left": 50,
-  "period": "day",
-  "monthly_limit": 50,
-  "monthly_usage": 50
-}
-```
-
-it means the program is running normally.
-
-### 6. Use Suno API
-
-You can check out the detailed API documentation at :
-[suno.gcui.ai/docs](https://suno.gcui.ai/docs)
-
-## API Reference
-
-Suno API currently mainly implements the following APIs:
-
-```bash
-- `/api/generate`: Generate music
-- `/v1/chat/completions`: Generate music - Call the generate API in a format that works with OpenAI’s API.
-- `/api/custom_generate`: Generate music (Custom Mode, support setting lyrics, music style, title, etc.)
-- `/api/generate_lyrics`: Generate lyrics based on prompt
-- `/api/get`: Get music information based on the id. Use “,” to separate multiple ids.
-    If no IDs are provided, all music will be returned.
-- `/api/get_limit`: Get quota Info
-- `/api/extend_audio`: Extend audio length
-- `/api/generate_stems`: Make stem tracks (separate audio and music track)
-- `/api/get_aligned_lyrics`: Get list of timestamps for each word in the lyrics
-- `/api/clip`: Get clip information based on ID passed as query parameter `id`
-- `/api/concat`: Generate the whole song from extensions
-```
-
-You can also specify the cookies in the `Cookie` header of your request, overriding the default cookies in the `SUNO_COOKIE` environment variable. This comes in handy when, for example, you want to use multiple free accounts at the same time.
-
-For more detailed documentation, please check out the demo site:
-[suno.gcui.ai/docs](https://suno.gcui.ai/docs)
-
-## API Integration Code Examples
-
-### Python
-
-```python
-import time
-import requests
-
-# replace with your suno-api URL
-base_url = 'http://localhost:3000'
-
-
-def custom_generate_audio(payload):
-    url = f"{base_url}/api/custom_generate"
-    response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-    return response.json()
-
-
-def extend_audio(payload):
-    url = f"{base_url}/api/extend_audio"
-    response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-    return response.json()
-
-def generate_audio_by_prompt(payload):
-    url = f"{base_url}/api/generate"
-    response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-    return response.json()
-
-
-def get_audio_information(audio_ids):
-    url = f"{base_url}/api/get?ids={audio_ids}"
-    response = requests.get(url)
-    return response.json()
-
-
-def get_quota_information():
-    url = f"{base_url}/api/get_limit"
-    response = requests.get(url)
-    return response.json()
-
-def get_clip(clip_id):
-    url = f"{base_url}/api/clip?id={clip_id}"
-    response = requests.get(url)
-    return response.json()
-
-def generate_whole_song(clip_id):
-    payload = {"clip_id": clip_id}
-    url = f"{base_url}/api/concat"
-    response = requests.post(url, json=payload)
-    return response.json()
-
-
-if __name__ == '__main__':
-    data = generate_audio_by_prompt({
-        "prompt": "A popular heavy metal song about war, sung by a deep-voiced male singer, slowly and melodiously. The lyrics depict the sorrow of people after the war.",
-        "make_instrumental": False,
-        "wait_audio": False
-    })
-
-    ids = f"{data[0]['id']},{data[1]['id']}"
-    print(f"ids: {ids}")
-
-    for _ in range(60):
-        data = get_audio_information(ids)
-        if data[0]["status"] == 'streaming':
-            print(f"{data[0]['id']} ==> {data[0]['audio_url']}")
-            print(f"{data[1]['id']} ==> {data[1]['audio_url']}")
-            break
-        # sleep 5s
-        time.sleep(5)
-
-```
-
-### JavaScript
-
-```js
-const axios = require("axios");
-
-// replace your vercel domain
-const baseUrl = "http://localhost:3000";
-
-async function customGenerateAudio(payload) {
-  const url = `${baseUrl}/api/custom_generate`;
-  const response = await axios.post(url, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-  return response.data;
-}
-
-async function generateAudioByPrompt(payload) {
-  const url = `${baseUrl}/api/generate`;
-  const response = await axios.post(url, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-  return response.data;
-}
-
-async function extendAudio(payload) {
-  const url = `${baseUrl}/api/extend_audio`;
-  const response = await axios.post(url, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-  return response.data;
-}
-
-async function getAudioInformation(audioIds) {
-  const url = `${baseUrl}/api/get?ids=${audioIds}`;
-  const response = await axios.get(url);
-  return response.data;
-}
-
-async function getQuotaInformation() {
-  const url = `${baseUrl}/api/get_limit`;
-  const response = await axios.get(url);
-  return response.data;
-}
-
-async function getClipInformation(clipId) {
-  const url = `${baseUrl}/api/clip?id=${clipId}`;
-  const response = await axios.get(url);
-  return response.data;
-}
-
-async function main() {
-  const data = await generateAudioByPrompt({
-    prompt:
-      "A popular heavy metal song about war, sung by a deep-voiced male singer, slowly and melodiously. The lyrics depict the sorrow of people after the war.",
-    make_instrumental: false,
-    wait_audio: false,
-  });
-
-  const ids = `${data[0].id},${data[1].id}`;
-  console.log(`ids: ${ids}`);
-
-  for (let i = 0; i < 60; i++) {
-    const data = await getAudioInformation(ids);
-    if (data[0].status === "streaming") {
-      console.log(`${data[0].id} ==> ${data[0].audio_url}`);
-      console.log(`${data[1].id} ==> ${data[1].audio_url}`);
-      break;
-    }
-    // sleep 5s
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+  "ok": true,
+  "summary": {
+    "artistas": 2,
+    "albumes": 3,
+    "workspaces": 3,
+    "canciones": 10,
+    "pendientes": 8,
+    "generando": 1,
+    "completadas": 1,
+    "errores": 0
   }
 }
-
-main();
 ```
 
-## Integration with Custom Agents
+### GET `/api/catalog/tracks`
 
-You can integrate Suno AI as a tool/plugin/action into your AI agent.
+Devuelve las canciones registradas.
 
-### Integration with GPTs
+Filtros opcionales:
 
-[coming soon...]
+```text
+/api/catalog/tracks?status=Pendiente
+/api/catalog/tracks?artist=Jeantune
+```
 
-### Integration with Coze
+### GET `/api/catalog/workspaces`
 
-[coming soon...]
+Devuelve los workspaces lógicos creados desde el catálogo.
 
-### Integration with LangChain
+Filtro opcional:
 
-[coming soon...]
+```text
+/api/catalog/workspaces?status=Pendiente
+```
 
-## Contributing
+### POST `/api/catalog/import`
 
-There are four ways you can support this project:
+Importa catálogo masivo.
 
-1. Fork and Submit Pull Requests: We welcome any PRs that enhance the functionality, APIs, response time and availability. You can also help us just by translating this README into your language—any help for this project is welcome!
-2. Open Issues: We appreciate reasonable suggestions and bug reports.
-3. Donate: If this project has helped you, consider buying us a coffee using the Sponsor button at the top of the project. Cheers! ☕
-4. Spread the Word: Recommend this project to others, star the repo, or add a backlink after using the project.
+Header:
 
-## Questions, Suggestions, Issues, or Bugs?
+```http
+x-api-key: TU_JATUNE_API_KEY
+```
 
-We use [GitHub Issues](https://github.com/gcui-art/suno-api/issues) to manage feedback. Feel free to open an issue, and we'll address it promptly.
+Body:
 
-## License
+```json
+{
+  "text": "Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Synth Latino, 95 BPM"
+}
+```
 
-The license of this project is LGPL-3.0 or later. See [LICENSE](LICENSE) for more information.
+Respuesta ejemplo:
 
-## Related Links
+```json
+{
+  "ok": true,
+  "summary": {
+    "artistas_procesados": 1,
+    "albumes_procesados": 1,
+    "workspaces_planificados": 1,
+    "canciones_creadas": 1,
+    "canciones_actualizadas": 0
+  },
+  "imported": 1
+}
+```
 
-- Project repository: [github.com/gcui-art/suno-api](https://github.com/gcui-art/suno-api)
-- Suno.ai official website: [suno.ai](https://suno.ai)
-- Demo: [suno.gcui.ai](https://suno.gcui.ai)
-- [Readpo](https://readpo.com?utm_source=github&utm_medium=suno-api): ReadPo is an AI-powered reading and writing assistant. Collect, curate, and create content at lightning speed.
-- Album AI: [Auto generate image metadata and chat with the album. RAG + Album.](https://github.com/gcui-art/album-ai)
+### POST `/api/catalog/generate-pending`
 
-## Statement
+Genera canciones pendientes desde el catálogo.
 
-suno-api is an unofficial open source project, intended for learning and research purposes only.
+Header:
+
+```http
+x-api-key: TU_JATUNE_API_KEY
+```
+
+Body recomendado:
+
+```json
+{
+  "limit": 1,
+  "wait_audio": false,
+  "make_instrumental": false
+}
+```
+
+Por estabilidad se recomienda procesar una canción por ejecución. Playwright + Suno + Render no son una licuadora industrial; mejor producción controlada que incendio bonito.
+
+---
+
+## Endpoints heredados de Suno API
+
+Este repo conserva las rutas base del proyecto original:
+
+```text
+POST /api/generate
+POST /api/custom_generate
+POST /api/generate_lyrics
+GET  /api/get
+GET  /api/get_limit
+POST /api/extend_audio
+POST /api/generate_stems
+GET  /api/get_aligned_lyrics
+GET  /api/clip
+POST /api/concat
+POST /v1/chat/completions
+```
+
+Prueba rápida:
+
+```bash
+curl "https://api-suno-nptk.onrender.com/api/get_limit"
+```
+
+Generación simple:
+
+```bash
+curl -X POST "https://api-suno-nptk.onrender.com/api/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"romantic latin pop, warm guitars, modern beat","make_instrumental":false,"wait_audio":false}'
+```
+
+---
+
+## Troubleshooting
+
+### Error: `Missing or invalid API key`
+
+Causa:
+
+- `JATUNE_API_KEY` está configurada en Render.
+- El dashboard o la petición no envió el header `x-api-key`.
+
+Solución:
+
+1. Copiar la clave desde Render → Environment → `JATUNE_API_KEY`.
+2. Pegarla en el dashboard en **Clave operativa del dashboard**.
+3. Marcar “Recordar en este navegador” si se desea.
+4. Reintentar importación o generación.
+
+### Error de build TypeScript con `x-api-key`
+
+Si aparece un error relacionado con:
+
+```text
+Property 'x-api-key' is incompatible with index signature
+```
+
+Actualizar a un commit donde `JatuneControlPanel.tsx` use `Headers()` en vez de objeto literal condicional. El fix correcto usa:
+
+```ts
+const headers = new Headers();
+headers.set('Content-Type', 'application/json');
+if (cleanKey) headers.set('x-api-key', cleanKey);
+```
+
+### Render descarga Playwright/Chromium y parece lento
+
+Normal. Durante build puede aparecer:
+
+```text
+Downloading Chrome Headless Shell
+Downloading FFmpeg
+```
+
+Eso no es error. El error real aparece cuando Render dice:
+
+```text
+Failed to compile
+exit code 1
+```
+
+### Cookie expirada
+
+Síntomas:
+
+- `/api/get_limit` falla.
+- Dashboard muestra cookie en validar.
+- Suno no responde correctamente.
+
+Solución:
+
+1. Iniciar sesión en Suno.
+2. Copiar una cookie nueva.
+3. Actualizar `SUNO_COOKIE` en Render.
+4. Ejecutar redeploy.
+
+### El catálogo se pierde después de redeploy
+
+Causa:
+
+- No hay disco persistente.
+
+Solución:
+
+- Crear disco en Render con mount `/data`.
+- Configurar `JATUNE_DATA_DIR=/data`.
+
+---
+
+## Flujo recomendado de operación
+
+1. Validar créditos en `/api/get_limit`.
+2. Abrir dashboard `/`.
+3. Pegar `JATUNE_API_KEY` si está configurada.
+4. Importar catálogo masivo.
+5. Revisar workspaces lógicos.
+6. Generar una canción pendiente.
+7. Refrescar catálogo.
+8. Auditar estado y audio generado.
+
+---
+
+## Roadmap
+
+### Fase 1 — MVP en Render
+
+- Dashboard operativo.
+- Créditos Suno.
+- Catálogo JSON persistible.
+- Carga masiva.
+- Workspaces lógicos.
+- Generación desde pendientes.
+
+### Fase 2 — Control avanzado
+
+- Edición de tracks desde dashboard.
+- Reintento automático de errores.
+- Actualización de canciones en estado `Generando`.
+- Descarga/exportación de catálogo.
+- Filtros avanzados por artista/workspace/estado.
+
+### Fase 3 — Sincronización con Suno
+
+- Botón “Sincronizar workspace con Suno”.
+- Captura de `suno_workspace_id`.
+- Asociación de tracks generados con workspace real.
+
+### Fase 4 — Base de datos formal
+
+- Migración de JSON a PostgreSQL.
+- Tabla de jobs.
+- Tabla de logs.
+- Historial completo de generaciones.
+- Auditoría por fecha, artista y proyecto.
+
+### Fase 5 — Worker / cola
+
+- Generación por lotes controlados.
+- Cola de trabajos.
+- Procesamiento en background.
+- Alertas por error.
+
+---
+
+## Desarrollo local
+
+```bash
+npm install
+npm run dev
+```
+
+Abrir:
+
+```text
+http://localhost:3000
+```
+
+Build local:
+
+```bash
+npm run build
+npm run start
+```
+
+---
+
+## Notas importantes
+
+Este proyecto usa automatización de navegador y sesión de usuario para interactuar con Suno. Debe usarse de manera responsable, respetando términos aplicables, límites de uso y seguridad de credenciales.
+
+No subir cookies ni claves al repositorio. Las credenciales van en Render Environment Variables.
+
+---
+
+## Licencia y origen
+
+Este repositorio deriva de `gcui-art/suno-api`, proyecto no oficial y open source. La adaptación actual agrega la capa operativa de **JATune Production** para gestión musical, dashboard y catálogo.
+
+Ver `LICENSE` para detalles de licencia.
