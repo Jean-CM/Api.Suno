@@ -1,4 +1,5 @@
 import pino from "pino";
+import { NextRequest, NextResponse } from "next/server";
 import { Page } from "rebrowser-playwright-core";
 
 const logger = pino();
@@ -15,7 +16,6 @@ export const sleep = (x: number, y?: number): Promise<void> => {
     const max = Math.max(x, y);
     timeout = Math.floor(Math.random() * (max - min + 1) + min) * 1000;
   }
-  // console.log(`Sleeping for ${timeout / 1000} seconds`);
   logger.info(`Sleeping for ${timeout / 1000} seconds`);
 
   return new Promise(resolve => setTimeout(resolve, timeout));
@@ -23,7 +23,7 @@ export const sleep = (x: number, y?: number): Promise<void> => {
 
 /**
  * @param target A Locator or a page
- * @returns {boolean} 
+ * @returns {boolean}
  */
 export const isPage = (target: any): target is Page => {
   return target.constructor.name === 'Page';
@@ -33,7 +33,7 @@ export const isPage = (target: any): target is Page => {
  * Waits for an hCaptcha image requests and then waits for all of them to end
  * @param page
  * @param signal `const controller = new AbortController(); controller.status`
- * @returns {Promise<void>} 
+ * @returns {Promise<void>}
  */
 export const waitForRequests = (page: Page, signal: AbortSignal): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -55,7 +55,7 @@ export const waitForRequests = (page: Page, signal: AbortSignal): Promise<void> 
         timeoutHandle = setTimeout(() => {
           cleanupListeners();
           resolve();
-        }, 1000); // 1 second of no requests
+        }, 1000);
       }
     };
 
@@ -75,23 +75,20 @@ export const waitForRequests = (page: Page, signal: AbortSignal): Promise<void> 
       }
     };
 
-    // Wait for an hCaptcha request for up to 1 minute
     const initialTimeout = setTimeout(() => {
       if (!requestOccurred) {
         page.off('request', onRequest);
         cleanupListeners();
         reject(new Error('No hCaptcha request occurred within 1 minute.'));
       } else {
-        // Start waiting for no hCaptcha requests
         resetTimeout();
       }
-    }, 60000); // 1 minute timeout
+    }, 60000);
 
     page.on('request', onRequest);
     page.on('requestfinished', onRequestFinished);
     page.on('requestfailed', onRequestFinished);
 
-    // Cleanup the initial timeout if an hCaptcha request occurs
     page.on('request', (request: { url: () => string }) => {
       if (urlPattern.test(request.url())) {
         clearTimeout(initialTimeout);
@@ -108,11 +105,58 @@ export const waitForRequests = (page: Page, signal: AbortSignal): Promise<void> 
     };
 
     signal.addEventListener('abort', onAbort, { once: true });
-  }); 
+  });
 }
 
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
+const allowedOrigins = () =>
+  (process.env.ALLOWED_ORIGIN || '*')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+export const getCorsHeaders = (req?: Request | NextRequest) => {
+  const origins = allowedOrigins();
+  const requestOrigin = req?.headers.get('origin') || '';
+  const allowAll = origins.includes('*');
+  const originAllowed = allowAll || origins.includes(requestOrigin);
+
+  return {
+    'Access-Control-Allow-Origin': allowAll ? '*' : (originAllowed ? requestOrigin : origins[0] || ''),
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+  };
+};
+
+export const corsHeaders = getCorsHeaders();
+
+export const unauthorizedResponse = (req?: Request | NextRequest) => {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: 'UNAUTHORIZED',
+      message: 'Missing or invalid API key.'
+    },
+    {
+      status: 401,
+      headers: getCorsHeaders(req)
+    }
+  );
+};
+
+export const requireApiKey = (req: NextRequest): NextResponse | null => {
+  const configuredKey = process.env.JATUNE_API_KEY;
+
+  // Backward compatible: if no key is configured, keep the API open.
+  // For production, always set JATUNE_API_KEY in Render.
+  if (!configuredKey) {
+    return null;
+  }
+
+  const providedKey = req.headers.get('x-api-key') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  if (providedKey !== configuredKey) {
+    return unauthorizedResponse(req);
+  }
+
+  return null;
+};
