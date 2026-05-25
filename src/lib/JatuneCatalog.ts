@@ -3,6 +3,7 @@ import path from 'node:path';
 
 export type AlbumType = 'Sencillo' | 'EP' | 'Álbum';
 export type TrackStatus = 'Pendiente' | 'Generando' | 'Completada' | 'Error' | 'Reintentar' | 'Descartada' | 'Publicada' | 'Distribuida';
+export type WorkspaceStatus = 'Pendiente' | 'Creado' | 'Error' | 'Sincronizar';
 
 export type Artist = {
   id: number;
@@ -16,6 +17,10 @@ export type Album = {
   titulo: string;
   tipo: AlbumType;
   fecha_creacion: string;
+  suno_workspace_name: string;
+  suno_workspace_id?: string;
+  workspace_status: WorkspaceStatus;
+  workspace_error?: string;
 };
 
 export type Track = {
@@ -48,6 +53,9 @@ export type CatalogRow = {
   album_id: number;
   album: string;
   tipo: AlbumType;
+  workspace_name: string;
+  workspace_status: WorkspaceStatus;
+  suno_workspace_id?: string;
   cancion_id: number;
   cancion: string;
   genero_prompt: string;
@@ -59,6 +67,22 @@ export type CatalogRow = {
   error_detalle?: string;
   fecha_creacion: string;
   fecha_actualizacion?: string;
+};
+
+export type WorkspaceRow = {
+  workspace_key: string;
+  album_id: number;
+  workspace_name: string;
+  workspace_status: WorkspaceStatus;
+  suno_workspace_id?: string;
+  workspace_error?: string;
+  artista: string;
+  album: string;
+  tipo: AlbumType;
+  canciones: number;
+  pendientes: number;
+  completadas: number;
+  fecha_creacion: string;
 };
 
 export type ImportRecord = {
@@ -105,6 +129,21 @@ export const getCatalogStorageInfo = () => ({
   persistent_recommended: process.env.JATUNE_DATA_DIR || fs.existsSync('/data') ? 'configured_or_detected' : 'ephemeral_fallback',
 });
 
+const normalizeAlbumForStore = (album: Partial<Album>): Album => {
+  const title = String(album.titulo || 'Proyecto sin título').trim();
+  return {
+    id: Number(album.id || 0),
+    artista_id: Number(album.artista_id || 0),
+    titulo: title,
+    tipo: (album.tipo || 'Sencillo') as AlbumType,
+    fecha_creacion: album.fecha_creacion || nowIso(),
+    suno_workspace_name: album.suno_workspace_name || title,
+    suno_workspace_id: album.suno_workspace_id,
+    workspace_status: album.workspace_status || 'Pendiente',
+    workspace_error: album.workspace_error,
+  };
+};
+
 export const readCatalogStore = (): CatalogStore => {
   ensureDataDir();
   const file = dataFile();
@@ -116,7 +155,7 @@ export const readCatalogStore = (): CatalogStore => {
       ...defaultStore(),
       ...parsed,
       artists: parsed.artists || [],
-      albums: parsed.albums || [],
+      albums: (parsed.albums || []).map(album => normalizeAlbumForStore(album)),
       tracks: parsed.tracks || [],
     };
   } catch {
@@ -140,6 +179,11 @@ export const normalizeAlbumType = (raw: string): AlbumType => {
   throw new Error(`Tipo inválido: ${raw}. Usa Sencillo, EP o Álbum.`);
 };
 
+export const buildWorkspaceName = (artistName: string, albumTitle: string, type: AlbumType) => {
+  const suffix = type === 'Sencillo' ? 'Single' : type;
+  return `${albumTitle.trim()} · ${artistName.trim()} · ${suffix}`;
+};
+
 const getOrCreateArtist = (store: CatalogStore, nombre: string) => {
   const cleanName = nombre.trim();
   const existing = store.artists.find(a => a.nombre.toLowerCase() === cleanName.toLowerCase());
@@ -154,17 +198,23 @@ const getOrCreateArtist = (store: CatalogStore, nombre: string) => {
   return artist;
 };
 
-const getOrCreateAlbum = (store: CatalogStore, artistId: number, titulo: string, tipo: AlbumType) => {
+const getOrCreateAlbum = (store: CatalogStore, artist: Artist, titulo: string, tipo: AlbumType) => {
   const cleanTitle = titulo.trim();
-  const existing = store.albums.find(a => a.artista_id === artistId && a.titulo.toLowerCase() === cleanTitle.toLowerCase() && a.tipo === tipo);
-  if (existing) return existing;
+  const existing = store.albums.find(a => a.artista_id === artist.id && a.titulo.toLowerCase() === cleanTitle.toLowerCase() && a.tipo === tipo);
+  if (existing) {
+    if (!existing.suno_workspace_name) existing.suno_workspace_name = buildWorkspaceName(artist.nombre, cleanTitle, tipo);
+    if (!existing.workspace_status) existing.workspace_status = 'Pendiente';
+    return existing;
+  }
 
   const album: Album = {
     id: store.nextAlbumId++,
-    artista_id: artistId,
+    artista_id: artist.id,
     titulo: cleanTitle,
     tipo,
     fecha_creacion: nowIso(),
+    suno_workspace_name: buildWorkspaceName(artist.nombre, cleanTitle, tipo),
+    workspace_status: 'Pendiente',
   };
   store.albums.push(album);
   return album;
@@ -235,7 +285,7 @@ export const importCatalogRecords = (records: ImportRecord[]) => {
 
   records.forEach(record => {
     const artist = getOrCreateArtist(store, record.artista);
-    const album = getOrCreateAlbum(store, artist.id, record.album, record.tipo);
+    const album = getOrCreateAlbum(store, artist, record.album, record.tipo);
     const result = createOrUpdateTrack(store, album.id, record.cancion, record.genero_prompt);
 
     artistsSeen.add(artist.nombre.toLowerCase());
@@ -249,6 +299,7 @@ export const importCatalogRecords = (records: ImportRecord[]) => {
   return {
     artistas_procesados: artistsSeen.size,
     albumes_procesados: albumsSeen.size,
+    workspaces_planificados: albumsSeen.size,
     canciones_creadas: created,
     canciones_actualizadas: updated,
   };
@@ -265,6 +316,9 @@ export const getCatalogRows = (): CatalogRow[] => {
       album_id: album?.id || 0,
       album: album?.titulo || 'Sin proyecto',
       tipo: album?.tipo || 'Sencillo',
+      workspace_name: album?.suno_workspace_name || album?.titulo || 'Sin workspace',
+      workspace_status: album?.workspace_status || 'Pendiente',
+      suno_workspace_id: album?.suno_workspace_id,
       cancion_id: track.id,
       cancion: track.titulo,
       genero_prompt: track.genero_prompt,
@@ -280,6 +334,29 @@ export const getCatalogRows = (): CatalogRow[] => {
   });
 };
 
+export const getWorkspaceRows = (): WorkspaceRow[] => {
+  const store = readCatalogStore();
+  return store.albums.map(album => {
+    const artist = store.artists.find(a => a.id === album.artista_id);
+    const tracks = store.tracks.filter(t => t.album_id === album.id);
+    return {
+      workspace_key: `${album.id}-${album.suno_workspace_name}`,
+      album_id: album.id,
+      workspace_name: album.suno_workspace_name || album.titulo,
+      workspace_status: album.workspace_status || 'Pendiente',
+      suno_workspace_id: album.suno_workspace_id,
+      workspace_error: album.workspace_error,
+      artista: artist?.nombre || 'Sin artista',
+      album: album.titulo,
+      tipo: album.tipo,
+      canciones: tracks.length,
+      pendientes: tracks.filter(t => t.estado === 'Pendiente' || t.estado === 'Reintentar').length,
+      completadas: tracks.filter(t => t.estado === 'Completada').length,
+      fecha_creacion: album.fecha_creacion,
+    };
+  });
+};
+
 export const getCatalogSummary = () => {
   const store = readCatalogStore();
   const byStatus = store.tracks.reduce<Record<string, number>>((acc, track) => {
@@ -287,9 +364,14 @@ export const getCatalogSummary = () => {
     return acc;
   }, {});
 
+  const workspaces = getWorkspaceRows();
+
   return {
     artistas: store.artists.length,
     albumes: store.albums.length,
+    workspaces: workspaces.length,
+    workspaces_pendientes: workspaces.filter(w => w.workspace_status === 'Pendiente' || w.workspace_status === 'Sincronizar').length,
+    workspaces_creados: workspaces.filter(w => w.workspace_status === 'Creado').length,
     canciones: store.tracks.length,
     pendientes: byStatus.Pendiente || 0,
     generando: byStatus.Generando || 0,
@@ -311,6 +393,7 @@ export const buildSunoPromptFromCatalogRow = (row: CatalogRow) => {
     `Crea una canción profesional para el artista ${row.artista}.`,
     `Título: ${row.cancion}.`,
     `Proyecto: ${row.album} (${row.tipo}).`,
+    `Workspace de control: ${row.workspace_name}.`,
     `Estilo e instrucciones musicales: ${row.genero_prompt}.`,
     'Producción moderna, mezcla limpia, estructura comercial, melodía memorable y alto potencial para plataformas digitales.',
   ].join(' ');
@@ -324,6 +407,16 @@ export const updateTrackStatus = (trackId: number, updates: Partial<Track>) => {
   Object.assign(track, updates, { fecha_actualizacion: nowIso() });
   writeCatalogStore(store);
   return track;
+};
+
+export const updateWorkspaceStatus = (albumId: number, updates: Partial<Album>) => {
+  const store = readCatalogStore();
+  const album = store.albums.find(a => a.id === albumId);
+  if (!album) throw new Error(`Workspace/álbum no encontrado: ${albumId}`);
+
+  Object.assign(album, updates);
+  writeCatalogStore(store);
+  return album;
 };
 
 export const resetCatalog = () => {
