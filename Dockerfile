@@ -20,7 +20,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV BROWSER_DISABLE_GPU=true
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV npm_config_audit=false
 ENV npm_config_fund=false
 
@@ -42,10 +42,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
 
-# Install Chromium for Playwright after npm install, keeping install logs cleaner/faster.
-RUN npx playwright install chromium
+# Do not skip Playwright browser download in the runtime image.
+# @playwright/browser-chromium must install the exact browser revision expected by rebrowser-playwright-core.
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 npm ci --omit=dev --no-audit --no-fund
+
+# Verify the browser expected by the installed Playwright stack exists in the image.
+RUN node -e "const { chromium } = require('@playwright/browser-chromium'); console.log('Chromium executable:', chromium.executablePath());"
 
 COPY --from=builder /src/.next ./.next
 COPY --from=builder /src/public ./public
