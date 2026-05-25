@@ -43,12 +43,15 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 COPY package*.json ./
 
-# Do not skip Playwright browser download in the runtime image.
-# @playwright/browser-chromium must install the exact browser revision expected by rebrowser-playwright-core.
-RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 npm ci --omit=dev --no-audit --no-fund
+# Install production dependencies first. Do not use `npx playwright install` here,
+# because it can fetch a newer Playwright browser revision than rebrowser-playwright-core expects.
+RUN npm ci --omit=dev --no-audit --no-fund
 
-# Verify the browser expected by the installed Playwright stack exists in the image.
-RUN node -e "const { chromium } = require('@playwright/browser-chromium'); console.log('Chromium executable:', chromium.executablePath());"
+# Install the exact Chromium revision expected by the installed rebrowser-playwright-core package.
+RUN node node_modules/rebrowser-playwright-core/cli.js install chromium
+
+# Verify the exact executable path exists before the image is accepted by Render.
+RUN node -e "const fs = require('fs'); const { chromium } = require('rebrowser-playwright-core'); const p = chromium.executablePath(); console.log('Rebrowser Chromium executable:', p); if (!fs.existsSync(p)) { console.error('Missing Chromium executable:', p); process.exit(1); }"
 
 COPY --from=builder /src/.next ./.next
 COPY --from=builder /src/public ./public
