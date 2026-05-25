@@ -1,156 +1,171 @@
-import Section from "./components/Section";
-import Markdown from 'react-markdown';
+import { sunoApi } from '@/lib/SunoApi';
 
+export const dynamic = 'force-dynamic';
 
-export default function Home() {
+type LimitInfo = {
+  credits_left?: number;
+  period?: string;
+  monthly_limit?: number;
+  monthly_usage?: number;
+};
 
-  const markdown = `
+type DashboardData = {
+  ok: boolean;
+  limit?: LimitInfo;
+  error?: string;
+};
 
----
-## 👋 Introduction
-
-Suno.ai v3 is an amazing AI music service. Although the official API is not yet available, we couldn't wait to integrate its capabilities somewhere.
-
-We discovered that some users have similar needs, so we decided to open-source this project, hoping you'll like it.
-
-We update quickly, please star us on Github:  [github.com/gcui-art/suno-api](https://github.com/gcui-art/suno-api) ⭐
-
-## 🌟 Features
-
-- Perfectly implements the creation API from \`app.suno.ai\`
-- Compatible with the format of OpenAI’s \`/v1/chat/completions\` API.
-- Automatically keep the account active.
-- Supports \`Custom Mode\`
-- One-click deployment to Vercel
-- In addition to the standard API, it also adapts to the API Schema of Agent platforms like GPTs and Coze, so you can use it as a tool/plugin/Action for LLMs and integrate it into any AI Agent.
-- Permissive open-source license, allowing you to freely integrate and modify.
-
-## 🚀 Getting Started
-
-### 1. Obtain the cookie of your app.suno.ai account
-
-1. Head over to [app.suno.ai](https://app.suno.ai) using your browser.
-2. Open up the browser console: hit \`F12\` or access the \`Developer Tools\`.
-3. Navigate to the \`Network tab\`.
-4. Give the page a quick refresh.
-5. Identify the request that includes the keyword \`client?_clerk_js_version\`.
-6. Click on it and switch over to the \`Header\` tab.
-7. Locate the \`Cookie\` section, hover your mouse over it, and copy the value of the Cookie.
-`;
-
-
-  const markdown_part2 = `
-### 2. Clone and deploy this project
-
-You can choose your preferred deployment method:
-
-#### Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgcui-art%2Fsuno-api&env=SUNO_COOKIE&project-name=suno-api&repository-name=suno-api)
-
-#### Run locally
-
-\`\`\`bash
-git clone https://github.com/gcui-art/suno-api.git
-cd suno-api
-npm install
-\`\`\`
-
-### 3. Configure suno-api
-
-- If deployed to Vercel, please add an environment variable \`SUNO_COOKIE\` in the Vercel dashboard, with the value of the cookie obtained in the first step.
-
-- If you’re running this locally, be sure to add the following to your \`.env\` file:
-
-  \`\`\`bash
-  SUNO_COOKIE=<your-cookie>
-  \`\`\`
-
-### 4. Run suno-api
-
-- If you’ve deployed to Vercel:
-  - Please click on Deploy in the Vercel dashboard and wait for the deployment to be successful.
-  - Visit the \`https://<vercel-assigned-domain>/api/get_limit\` API for testing.
-- If running locally:
-  - Run \`npm run dev\`.
-  - Visit the \`http://localhost:3000/api/get_limit\` API for testing.
-- If the following result is returned:
-
-  \`\`\`json
-  {
-    "credits_left": 50,
-    "period": "day",
-    "monthly_limit": 50,
-    "monthly_usage": 50
+async function getDashboardData(): Promise<DashboardData> {
+  try {
+    const api = await sunoApi();
+    const limit = await api.get_credits() as LimitInfo;
+    return { ok: true, limit };
+  } catch (error: any) {
+    return {
+      ok: false,
+      error: error?.message || 'No fue posible consultar el estado del servicio.'
+    };
   }
-  \`\`\`
+}
 
-it means the program is running normally.
+const formatNumber = (value?: number) =>
+  typeof value === 'number' ? new Intl.NumberFormat('es-DO').format(value) : 'N/D';
 
-### 5. Use Suno API
+const formatPercent = (usage?: number, limit?: number) => {
+  if (!usage || !limit) return '0%';
+  return `${Math.min(100, Math.round((usage / limit) * 100))}%`;
+};
 
-You can check out the detailed API documentation at [suno.gcui.ai/docs](https://suno.gcui.ai/docs).
+const getUsagePercent = (usage?: number, limit?: number) => {
+  if (!usage || !limit) return 0;
+  return Math.min(100, Math.round((usage / limit) * 100));
+};
 
-## 📚 API Reference
+export default async function Home() {
+  const data = await getDashboardData();
+  const limit = data.limit || {};
+  const usagePercent = getUsagePercent(limit.monthly_usage, limit.monthly_limit);
+  const statusLabel = data.ok ? 'Operativo' : 'Requiere atención';
+  const statusClass = data.ok ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200';
+  const checkedAt = new Date().toLocaleString('es-DO', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
 
-Suno API currently mainly implements the following APIs:
-
-\`\`\`bash
-- \`/api/generate\`: Generate music
-- \`/v1/chat/completions\`: Generate music - Call the generate API in a format 
-  that works with OpenAI’s API.
-- \`/api/custom_generate\`: Generate music (Custom Mode, support setting lyrics, 
-  music style, title, etc.)
-- \`/api/generate_lyrics\`: Generate lyrics based on prompt
-- \`/api/get\`: Get music list
-- \`/api/get?ids=\`: Get music Info by id, separate multiple id with ",".
-- \`/api/get_limit\`: Get quota Info
-- \`/api/extend_audio\`: Extend audio length
-- \`/api/generate_stems\`: Make stem tracks (separate audio and music track)
-- \`/api/get_aligned_lyrics\`: Get list of timestamps for each word in the lyrics
-- \`/api/concat\`: Generate the whole song from extensions
-\`\`\`
-
-For more detailed documentation, please check out the demo site:
-
-👉 [suno.gcui.ai/docs](https://suno.gcui.ai/docs)
-
-`;
   return (
-    <>
-      <Section className="">
-        <div className="flex flex-col m-auto py-20 text-center items-center justify-center gap-4 my-8
-        lg:px-20 px-4
-        bg-indigo-900/90 rounded-2xl border shadow-2xl hover:shadow-none duration-200">
-          <span className=" px-5 py-1 text-xs font-light border rounded-full 
-          border-white/20 uppercase text-white/50">
-            Unofficial
-          </span>
-          <h1 className="font-bold text-7xl flex text-white/90">
-            Suno AI API
-          </h1>
-          <p className="text-white/80 text-lg">
-            `Suno-api` is an open-source project that enables you to set up your own Suno AI API.
-          </p>
+    <section className="w-full min-h-screen bg-slate-950 text-white px-4 py-8 lg:px-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+        <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 shadow-2xl lg:p-10">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="mb-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-yellow-200">
+                JATune Production
+              </p>
+              <h1 className="text-4xl font-black tracking-tight lg:text-6xl">
+                Centro de Control Musical
+              </h1>
+              <p className="mt-4 max-w-3xl text-base text-slate-300 lg:text-lg">
+                Motor conectado a Suno, desplegado en Render y listo para operar con visión ejecutiva: créditos, estado del servicio y próximos módulos de producción.
+              </p>
+            </div>
+            <div className={`w-fit rounded-2xl border px-5 py-4 text-sm font-bold ${statusClass}`}>
+              <span className="block text-xs uppercase tracking-[0.25em] opacity-80">Estado</span>
+              {statusLabel}
+            </div>
+          </div>
         </div>
 
-      </Section>
-      <Section className="my-10">
-        <article className="prose lg:prose-lg max-w-3xl">
-          <Markdown>
-            {markdown}
-          </Markdown>
-          <video controls width="1024" className="w-full border rounded-lg shadow-xl">
-            <source src="/get-cookie-demo.mp4" type="video/mp4" />
-            Your browser does not support frames.
-          </video>
-          <Markdown>
-            {markdown_part2}
-          </Markdown>
-        </article>
-      </Section>
+        {!data.ok && (
+          <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 p-6 text-rose-100">
+            <h2 className="text-xl font-bold">Alerta del motor</h2>
+            <p className="mt-2 text-sm text-rose-100/80">{data.error}</p>
+            <p className="mt-4 text-sm text-rose-100/70">
+              Revisa en Render que SUNO_COOKIE esté configurada y vigente. Sin cookie válida, el tablero vive, pero el motor no canta.
+            </p>
+          </div>
+        )}
 
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+            <p className="text-sm font-medium text-slate-400">Créditos disponibles</p>
+            <p className="mt-3 text-4xl font-black text-emerald-300">{formatNumber(limit.credits_left)}</p>
+            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Suno balance</p>
+          </div>
 
-    </>
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+            <p className="text-sm font-medium text-slate-400">Uso mensual</p>
+            <p className="mt-3 text-4xl font-black text-sky-300">{formatNumber(limit.monthly_usage)}</p>
+            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Créditos consumidos</p>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+            <p className="text-sm font-medium text-slate-400">Límite mensual</p>
+            <p className="mt-3 text-4xl font-black text-violet-300">{formatNumber(limit.monthly_limit)}</p>
+            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Periodo: {limit.period || 'N/D'}</p>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl">
+            <p className="text-sm font-medium text-slate-400">Consumo</p>
+            <p className="mt-3 text-4xl font-black text-yellow-200">{formatPercent(limit.monthly_usage, limit.monthly_limit)}</p>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
+              <div className="h-full rounded-full bg-yellow-300" style={{ width: `${usagePercent}%` }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl lg:p-8">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-2xl font-black">Panel operativo</h2>
+                <p className="mt-1 text-sm text-slate-400">Resumen para operar generación musical sin entrar al log de Render a ciegas.</p>
+              </div>
+              <span className="rounded-full border border-white/10 bg-slate-900 px-4 py-2 text-xs text-slate-300">
+                Última lectura: {checkedAt}
+              </span>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Render</p>
+                <p className="mt-2 text-lg font-bold text-white">Online</p>
+                <p className="mt-2 text-sm text-slate-400">Servicio web activo.</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Cookie</p>
+                <p className="mt-2 text-lg font-bold text-white">{data.ok ? 'Vigente' : 'Validar'}</p>
+                <p className="mt-2 text-sm text-slate-400">No se expone ningún secreto.</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">API</p>
+                <p className="mt-2 text-lg font-bold text-white">/api/generate</p>
+                <p className="mt-2 text-sm text-slate-400">Motor principal listo.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl lg:p-8">
+            <h2 className="text-2xl font-black">Roadmap inmediato</h2>
+            <div className="mt-6 space-y-4">
+              {[
+                ['01', 'Proteger endpoints con JATUNE_API_KEY'],
+                ['02', 'Crear historial de generaciones'],
+                ['03', 'Agregar cola para álbumes y EPs'],
+                ['04', 'Conectar frontend Streamlit/Panel admin']
+              ].map(([step, title]) => (
+                <div key={step} className="flex gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-300 text-sm font-black text-slate-950">{step}</span>
+                  <p className="pt-2 text-sm font-semibold text-slate-200">{title}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 text-sm text-slate-400">
+          <strong className="text-slate-200">Endpoint base:</strong> https://api-suno-nptk.onrender.com · <strong className="text-slate-200">Prueba:</strong> /api/get_limit · <strong className="text-slate-200">Producción:</strong> usar API key antes de abrirlo al público.
+        </div>
+      </div>
+    </section>
   );
 }
