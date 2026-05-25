@@ -23,6 +23,7 @@ type Track = {
   genero_prompt: string;
   estado: string;
   audio_url?: string;
+  error_detalle?: string;
 };
 
 type Workspace = {
@@ -90,6 +91,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const [filter, setFilter] = useState('Todos');
 
   const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
+  const errorTracks = tracks.filter((track) => track.estado === 'Error');
 
   const saveKeyPreference = (key: string, remember: boolean) => {
     if (remember && key.trim()) {
@@ -133,7 +135,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       });
 
       const planned = data.summary?.workspaces_planificados ?? 0;
-      setMessage(`Catálogo importado: ${data.imported} registros. Workspaces planificados: ${planned}.`);
+      setMessage(`Catálogo importado: ${data.imported} registros. Workspaces lógicos planificados: ${planned}.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
@@ -155,7 +157,13 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
       });
 
-      setMessage(`Generación ejecutada: ${data.processed} canción procesada.`);
+      const failed = (data.results || []).filter((item: { ok: boolean }) => !item.ok);
+      if (failed.length > 0) {
+        const firstError = failed[0]?.error || 'Error no especificado';
+        setMessage(`Generación procesada con error: ${firstError}`);
+      } else {
+        setMessage(`Generación ejecutada: ${data.processed} canción procesada.`);
+      }
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
@@ -165,9 +173,29 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     }
   };
 
+  const retryErrors = async () => {
+    setBusy(true);
+    setMessage('');
+    saveKeyPreference(apiKey, rememberKey);
+
+    try {
+      const data = await apiRequest('/api/catalog/retry-errors', {
+        method: 'POST',
+        apiKey,
+      });
+      setMessage(`Errores marcados para reintento: ${data.updated}.`);
+      await refreshCatalog();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error: ${detail}. Revisa la clave operativa.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const metricCards: Array<[string, number, string]> = [
     ['Artistas', summary.artistas, 'text-yellow-200'],
-    ['Workspaces', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
+    ['Workspaces lógicos', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
     ['Álbumes / EPs', summary.albumes, 'text-violet-300'],
     ['Canciones', summary.canciones, 'text-sky-300'],
     ['Pendientes', summary.pendientes, 'text-emerald-300'],
@@ -215,7 +243,14 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="rounded-3xl border border-sky-300/20 bg-sky-300/[0.06] p-5 text-sm text-sky-100">
+        <p className="font-black text-sky-200">Nota de operación</p>
+        <p className="mt-1 text-sky-100/80">
+          Los workspaces que ves aquí son internos de JATune para organizar el catálogo. Todavía no crean carpetas/workspaces reales dentro de Suno. La sincronización real con Suno se implementará como conector separado para evitar romper la generación.
+        </p>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -229,7 +264,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <textarea
             value={bulkText}
             onChange={(event) => setBulkText(event.target.value)}
-            className="mt-5 h-72 w-full resize-y rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4"
+            className="mt-5 h-80 w-full resize-y rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4"
           />
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <button onClick={importCatalog} disabled={busy} className="min-h-12 rounded-2xl bg-yellow-300 px-6 font-black text-slate-950 disabled:opacity-50">
@@ -266,6 +301,12 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
             ))}
           </div>
 
+          {errorTracks.length > 0 && (
+            <button onClick={retryErrors} disabled={busy} className="mt-5 min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">
+              Marcar {errorTracks.length} error(es) para reintento
+            </button>
+          )}
+
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
         </div>
       </div>
@@ -273,22 +314,22 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       <div className="rounded-3xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] p-5 shadow-xl lg:p-7">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-black sm:text-2xl">Workspaces tipo Suno</h2>
-            <p className="mt-1 text-sm text-slate-400">Nombres planificados para llevar control por proyecto.</p>
+            <h2 className="text-xl font-black sm:text-2xl">Workspaces lógicos JATune</h2>
+            <p className="mt-1 text-sm text-slate-400">Control interno por proyecto. Aún no sincronizado con workspaces reales de Suno.</p>
           </div>
           <span className="w-fit rounded-full border border-white/10 bg-slate-950 px-4 py-2 text-xs font-bold text-slate-300">
             {workspaces.length} planificados
           </span>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {workspaces.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-slate-950 p-5 text-sm text-slate-400">Importa catálogo para crear workspaces lógicos.</div>
-          ) : workspaces.slice(0, 12).map((workspace) => (
+          ) : workspaces.slice(0, 16).map((workspace) => (
             <div key={workspace.workspace_key} className="rounded-2xl border border-white/10 bg-slate-950 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.25em] text-fuchsia-200/70">Workspace</p>
+                  <p className="text-xs uppercase tracking-[0.25em] text-fuchsia-200/70">Workspace lógico</p>
                   <h3 className="mt-2 text-lg font-black text-white">{workspace.workspace_name}</h3>
                 </div>
                 <span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold text-slate-300">{workspace.workspace_status}</span>
@@ -304,6 +345,21 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         </div>
       </div>
 
+      {errorTracks.length > 0 && (
+        <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7">
+          <h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2>
+          <p className="mt-1 text-sm text-rose-100/70">Detalle técnico devuelto por el backend para corregir o reintentar.</p>
+          <div className="mt-5 space-y-3">
+            {errorTracks.slice(0, 6).map((track) => (
+              <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4">
+                <p className="font-bold text-white">{track.artista} · {track.cancion}</p>
+                <p className="mt-2 text-sm text-rose-100/80">{track.error_detalle || 'Sin detalle del error.'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -316,25 +372,27 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
-          <div className="min-w-[1080px]">
+          <div className="min-w-[1280px]">
             <div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
               <div className="col-span-2">Artista</div>
               <div className="col-span-3">Workspace</div>
               <div className="col-span-2">Canción</div>
-              <div className="col-span-3">Prompt</div>
+              <div className="col-span-2">Prompt</div>
               <div className="col-span-1">Estado</div>
               <div className="col-span-1">Audio</div>
+              <div className="col-span-1">Error</div>
             </div>
             {filteredTracks.length === 0 ? (
               <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div>
-            ) : filteredTracks.slice(0, 40).map((track) => (
+            ) : filteredTracks.slice(0, 80).map((track) => (
               <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200">
                 <div className="col-span-2 font-semibold">{track.artista}</div>
                 <div className="col-span-3 text-slate-300">{track.workspace_name || track.album}</div>
                 <div className="col-span-2 text-slate-300">{track.cancion}</div>
-                <div className="col-span-3 truncate text-slate-500">{track.genero_prompt}</div>
+                <div className="col-span-2 truncate text-slate-500">{track.genero_prompt}</div>
                 <div className="col-span-1"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{track.estado}</span></div>
                 <div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div>
+                <div className="col-span-1 truncate text-rose-200">{track.error_detalle || '—'}</div>
               </div>
             ))}
           </div>
