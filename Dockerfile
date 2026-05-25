@@ -3,8 +3,13 @@
 FROM node:lts-bookworm AS builder
 WORKDIR /src
 
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV npm_config_audit=false
+ENV npm_config_fund=false
+
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npm run build
@@ -14,6 +19,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV BROWSER_DISABLE_GPU=true
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV npm_config_audit=false
+ENV npm_config_fund=false
 
 # Chromium/Playwright runtime dependencies for Render/Docker.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -33,9 +42,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --no-audit --no-fund
 
-# Install Chromium for Playwright.
+# Install Chromium for Playwright after npm install, keeping install logs cleaner/faster.
 RUN npx playwright install chromium
 
 COPY --from=builder /src/.next ./.next
