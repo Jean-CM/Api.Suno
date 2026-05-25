@@ -18,8 +18,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
-      <body className={`${inter.className} min-h-screen overflow-x-hidden bg-slate-950 text-white antialiased`}>
+    <html lang="es" className="min-h-full scroll-smooth">
+      <body className={`${inter.className} min-h-screen overflow-x-hidden overflow-y-auto bg-slate-950 text-white antialiased`}>
         {children}
         <Analytics />
       </body>
