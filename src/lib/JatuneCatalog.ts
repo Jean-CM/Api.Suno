@@ -409,6 +409,22 @@ export const updateTrackStatus = (trackId: number, updates: Partial<Track>) => {
   return track;
 };
 
+export const retryErrorTracks = () => {
+  const store = readCatalogStore();
+  let updated = 0;
+
+  store.tracks.forEach(track => {
+    if (track.estado === 'Error') {
+      track.estado = 'Reintentar';
+      track.fecha_actualizacion = nowIso();
+      updated += 1;
+    }
+  });
+
+  writeCatalogStore(store);
+  return { updated };
+};
+
 export const updateWorkspaceStatus = (albumId: number, updates: Partial<Album>) => {
   const store = readCatalogStore();
   const album = store.albums.find(a => a.id === albumId);
