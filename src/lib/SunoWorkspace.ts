@@ -46,7 +46,7 @@ const addSunoCookies = async (context: any) => {
   await context.addCookies(cookies);
 };
 
-const clickIfVisible = async (page: any, locator: any, timeout = 2500) => {
+const clickIfVisible = async (page: any, locator: any, timeout = 3000) => {
   try {
     await locator.first().click({ timeout, force: true });
     return true;
@@ -55,9 +55,62 @@ const clickIfVisible = async (page: any, locator: any, timeout = 2500) => {
   }
 };
 
+const closePossiblePopups = async (page: any) => {
+  await clickIfVisible(page, page.getByLabel(/close/i), 1200);
+  await clickIfVisible(page, page.getByRole('button', { name: /close/i }), 1200);
+  await page.keyboard.press('Escape').catch(() => undefined);
+};
+
+const openWorkspacesLibrary = async (page: any) => {
+  const urls = [
+    'https://suno.com/library?tab=workspaces',
+    'https://suno.com/library/workspaces',
+    'https://suno.com/library',
+  ];
+
+  for (const url of urls) {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForTimeout(4000);
+    await closePossiblePopups(page);
+
+    const clickedTab = await clickIfVisible(page, page.getByRole('tab', { name: /workspaces/i }), 2500)
+      || await clickIfVisible(page, page.getByText(/^workspaces$/i), 2500);
+
+    if (clickedTab) await page.waitForTimeout(1500);
+
+    const hasNewWorkspace = await page.getByText(/new workspace|create new workspace/i).first().isVisible({ timeout: 4000 }).catch(() => false);
+    if (hasNewWorkspace) return true;
+  }
+
+  return false;
+};
+
+const openCreateWorkspaceDialog = async (page: any) => {
+  const candidates = [
+    page.getByRole('button', { name: /new workspace/i }),
+    page.getByText(/create new workspace/i),
+    page.locator('button').filter({ hasText: /new workspace/i }),
+    page.locator('[role="button"]').filter({ hasText: /new workspace/i }),
+    page.locator('div').filter({ hasText: /^\s*\+\s*Create New Workspace\s*$/i }),
+  ];
+
+  for (const candidate of candidates) {
+    const clicked = await clickIfVisible(page, candidate, 5000);
+    if (clicked) {
+      await page.waitForTimeout(2500);
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const fillFirstVisibleTextbox = async (page: any, value: string) => {
   const candidates = [
     page.getByPlaceholder(/workspace|name|nombre|title|título/i),
+    page.locator('input[name*="name" i]'),
+    page.locator('input[placeholder*="name" i]'),
+    page.locator('input[placeholder*="workspace" i]'),
     page.getByRole('textbox'),
     page.locator('input[type="text"]'),
     page.locator('textarea'),
@@ -66,15 +119,38 @@ const fillFirstVisibleTextbox = async (page: any, value: string) => {
   for (const candidate of candidates) {
     try {
       const first = candidate.first();
-      await first.waitFor({ timeout: 3500 });
-      await first.fill(value, { timeout: 3500 });
+      await first.waitFor({ timeout: 5000 });
+      await first.fill(value, { timeout: 5000 });
       return true;
     } catch {
-      // Try next selector
+      // Try next selector.
     }
   }
 
   return false;
+};
+
+const submitCreateWorkspace = async (page: any) => {
+  const candidates = [
+    page.getByRole('button', { name: /^create$/i }),
+    page.getByRole('button', { name: /create workspace/i }),
+    page.getByRole('button', { name: /save/i }),
+    page.getByText(/^create$/i),
+    page.getByText(/create workspace/i),
+    page.getByText(/save/i),
+  ];
+
+  for (const candidate of candidates) {
+    const clicked = await clickIfVisible(page, candidate, 5000);
+    if (clicked) {
+      await page.waitForTimeout(5000);
+      return true;
+    }
+  }
+
+  await page.keyboard.press('Enter').catch(() => undefined);
+  await page.waitForTimeout(5000);
+  return true;
 };
 
 export async function createSunoWorkspace(workspaceName: string): Promise<SunoWorkspaceCreateResult> {
@@ -88,7 +164,7 @@ export async function createSunoWorkspace(workspaceName: string): Promise<SunoWo
 
   const context = await browser.newContext({
     locale: process.env.BROWSER_LOCALE || 'en',
-    viewport: { width: 1440, height: 1000 },
+    viewport: { width: 1600, height: 1000 },
   });
 
   try {
@@ -96,37 +172,14 @@ export async function createSunoWorkspace(workspaceName: string): Promise<SunoWo
     const page = await context.newPage();
     page.setDefaultTimeout(45000);
 
-    await page.goto('https://suno.com/create', { waitUntil: 'domcontentloaded', timeout: 90000 });
-    await page.waitForTimeout(3500);
-
-    // Close optional popups that can block the workspace picker.
-    await clickIfVisible(page, page.getByLabel(/close/i), 1500);
-    await clickIfVisible(page, page.getByRole('button', { name: /close/i }), 1500);
-
-    // If the menu is already visible, click Create New Workspace directly.
-    let opened = await clickIfVisible(page, page.getByText(/create new workspace/i), 2500);
-
-    // Otherwise try to open the workspace selector.
-    if (!opened) {
-      const selectorCandidates = [
-        page.getByText(/my workspace/i),
-        page.getByText(/workspace/i),
-        page.locator('button').filter({ hasText: /workspace/i }),
-        page.locator('[role="button"]').filter({ hasText: /workspace/i }),
-      ];
-
-      for (const selector of selectorCandidates) {
-        const clicked = await clickIfVisible(page, selector, 2500);
-        if (clicked) {
-          await page.waitForTimeout(1500);
-          opened = await clickIfVisible(page, page.getByText(/create new workspace/i), 5000);
-          if (opened) break;
-        }
-      }
+    const libraryReady = await openWorkspacesLibrary(page);
+    if (!libraryReady) {
+      throw new Error('No pude abrir Library → Workspaces en Suno. Revisa si la sesión sigue vigente o si la URL cambió.');
     }
 
+    const opened = await openCreateWorkspaceDialog(page);
     if (!opened) {
-      throw new Error('No pude abrir la opción Create New Workspace en Suno. La UI pudo cambiar o la sesión no abrió la vista Create.');
+      throw new Error('No pude hacer clic en + New Workspace / Create New Workspace dentro de Library → Workspaces.');
     }
 
     const filled = await fillFirstVisibleTextbox(page, name);
@@ -134,28 +187,9 @@ export async function createSunoWorkspace(workspaceName: string): Promise<SunoWo
       throw new Error('No encontré el campo para escribir el nombre del workspace en Suno.');
     }
 
-    const createButtons = [
-      page.getByRole('button', { name: /^create$/i }),
-      page.getByRole('button', { name: /create workspace/i }),
-      page.getByRole('button', { name: /save/i }),
-      page.getByText(/^create$/i),
-      page.getByText(/create workspace/i),
-      page.getByText(/save/i),
-    ];
+    await submitCreateWorkspace(page);
 
-    let submitted = false;
-    for (const button of createButtons) {
-      submitted = await clickIfVisible(page, button, 5000);
-      if (submitted) break;
-    }
-
-    if (!submitted) {
-      throw new Error('No encontré el botón final para crear/guardar el workspace en Suno.');
-    }
-
-    await page.waitForTimeout(4500);
-
-    const visible = await page.getByText(name, { exact: false }).first().isVisible({ timeout: 8000 }).catch(() => false);
+    const visible = await page.getByText(name, { exact: false }).first().isVisible({ timeout: 12000 }).catch(() => false);
     if (!visible) {
       throw new Error('Suno no confirmó visualmente el workspace creado. Revisa manualmente si quedó creado.');
     }
@@ -164,7 +198,7 @@ export async function createSunoWorkspace(workspaceName: string): Promise<SunoWo
       ok: true,
       name,
       url: page.url(),
-      message: 'Workspace creado o confirmado visualmente en Suno.',
+      message: 'Workspace creado o confirmado visualmente en Suno desde Library → Workspaces.',
     };
   } finally {
     await browser.close().catch(() => undefined);
