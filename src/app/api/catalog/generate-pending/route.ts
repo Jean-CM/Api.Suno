@@ -5,11 +5,51 @@ import { getCorsHeaders, requireApiKey } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-const firstClip = (response: any) => {
-  if (Array.isArray(response) && response.length > 0) return response[0];
-  if (response?.clips && Array.isArray(response.clips) && response.clips.length > 0) return response.clips[0];
-  if (response?.tracks && Array.isArray(response.tracks) && response.tracks.length > 0) return response.tracks[0];
-  return response || {};
+const getClipDuration = (clip: any): number | null => {
+  const candidates = [
+    clip?.duration,
+    clip?.duration_seconds,
+    clip?.durationSeconds,
+    clip?.metadata?.duration,
+    clip?.metadata?.duration_seconds,
+    clip?.metadata?.durationSeconds,
+    clip?.audio_duration,
+    clip?.audioDuration,
+  ];
+
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+
+  return null;
+};
+
+const getClips = (response: any): any[] => {
+  if (Array.isArray(response)) return response.filter(Boolean);
+  if (Array.isArray(response?.clips)) return response.clips.filter(Boolean);
+  if (Array.isArray(response?.tracks)) return response.tracks.filter(Boolean);
+  if (response && typeof response === 'object') return [response];
+  return [];
+};
+
+const selectBestClip = (response: any) => {
+  const clips = getClips(response);
+  if (clips.length === 0) return {};
+
+  const withAudio = clips.filter((clip) => Boolean(clip?.audio_url));
+  const candidates = withAudio.length > 0 ? withAudio : clips;
+
+  const withDuration = candidates
+    .map((clip) => ({ clip, duration: getClipDuration(clip) }))
+    .filter((item) => item.duration !== null) as Array<{ clip: any; duration: number }>;
+
+  if (withDuration.length > 0) {
+    withDuration.sort((a, b) => a.duration - b.duration);
+    return withDuration[0].clip;
+  }
+
+  return candidates[0];
 };
 
 export async function POST(request: NextRequest) {
@@ -31,7 +71,9 @@ export async function POST(request: NextRequest) {
         const prompt = buildSunoPromptFromCatalogRow(row);
         const api = await sunoApi();
         const generated = await api.generate(prompt, makeInstrumental, body?.model || DEFAULT_MODEL, waitAudio);
-        const clip = firstClip(generated);
+        const clip = selectBestClip(generated);
+        const selectedDuration = getClipDuration(clip);
+        const totalVersions = getClips(generated).length;
 
         const status = clip?.audio_url ? 'Completada' : 'Generando';
         updateTrackStatus(row.cancion_id, {
@@ -43,7 +85,16 @@ export async function POST(request: NextRequest) {
           error_detalle: undefined,
         });
 
-        results.push({ ok: true, track_id: row.cancion_id, title: row.cancion, status, clip });
+        results.push({
+          ok: true,
+          track_id: row.cancion_id,
+          title: row.cancion,
+          status,
+          selected_policy: 'shortest_duration_available',
+          selected_duration: selectedDuration,
+          versions_received: totalVersions,
+          clip,
+        });
       } catch (error: any) {
         updateTrackStatus(row.cancion_id, { estado: 'Error', error_detalle: error?.message || 'Error generando canción.' });
         results.push({ ok: false, track_id: row.cancion_id, title: row.cancion, error: error?.message || 'Error generando canción.' });
@@ -51,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: true, processed: results.length, results },
+      { ok: true, processed: results.length, selection_policy: 'shortest_duration_available', results },
       { status: 200, headers: getCorsHeaders(request) }
     );
   } catch (error: any) {
