@@ -195,11 +195,12 @@ export async function POST(request: NextRequest) {
 
     const zip = buildZip(files);
     const projectName = rows[0]?.album ? safeName(rows[0].album) : 'jatune-package';
+    const corsHeaders = getCorsHeaders(request);
 
     return new NextResponse(zip, {
       status: 200,
       headers: {
-        ...Object.fromEntries(getCorsHeaders(request).entries()),
+        ...corsHeaders,
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="${projectName}-audio-metadata.zip"`,
       },
