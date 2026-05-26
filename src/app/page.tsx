@@ -66,10 +66,10 @@ export default async function Home() {
                 JATune Production
               </p>
               <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-                Centro de Control Musical
+                Centro Ejecutivo de Producción Musical
               </h1>
               <p className="mt-4 max-w-4xl text-sm text-slate-300 sm:text-base lg:text-lg">
-                Cabina central para operar catálogo, créditos, carga masiva, workspaces lógicos y generación musical desde Render.
+                Plataforma central para importar catálogo, generar tandas musicales con Suno, aprobar audios finales y descargar paquetes por álbum, EP o sencillo con metadata lista para operación.
               </p>
             </div>
 
@@ -126,10 +126,6 @@ export default async function Home() {
         </div>
 
         <JatuneControlPanel initialSummary={summary} initialTracks={tracks} />
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5 text-xs text-slate-400 sm:p-6 sm:text-sm">
-          <strong className="text-slate-200">Endpoint base:</strong> https://api-suno-nptk.onrender.com · <strong className="text-slate-200">Catálogo:</strong> /api/catalog/tracks · <strong className="text-slate-200">Importar:</strong> /api/catalog/import · <strong className="text-slate-200">Producción:</strong> configura JATUNE_API_KEY.
-        </div>
       </div>
     </section>
   );
