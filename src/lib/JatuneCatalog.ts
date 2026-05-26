@@ -4,6 +4,11 @@ import path from 'node:path';
 export type AlbumType = 'Sencillo' | 'EP' | 'Álbum';
 export type TrackStatus = 'Pendiente' | 'Generando' | 'Completada' | 'Error' | 'Reintentar' | 'Descartada' | 'Publicada' | 'Distribuida';
 export type WorkspaceStatus = 'Pendiente' | 'Creado' | 'Error' | 'Sincronizar';
+export type AudioFinalStatus = 'Pendiente' | 'En revisión' | 'Aprobado' | 'Descartado';
+export type MasterStatus = 'Pendiente' | 'Para master' | 'Masterizada';
+export type AssetStatus = 'Pendiente' | 'En proceso' | 'Lista';
+export type MetadataStatus = 'Pendiente' | 'Completa';
+export type DistributionStatus = 'Pendiente' | 'Checklist' | 'Subido' | 'Distribuido' | 'Publicado';
 
 export type Artist = {
   id: number;
@@ -32,8 +37,31 @@ export type Track = {
   image_url?: string;
   video_url?: string;
   clip_id?: string;
+  duration?: string | number;
+  versions_received?: number;
+  selected_version_policy?: string;
   estado: TrackStatus;
   error_detalle?: string;
+  audio_final_status?: AudioFinalStatus;
+  master_status?: MasterStatus;
+  cover_status?: AssetStatus;
+  metadata_status?: MetadataStatus;
+  distribution_status?: DistributionStatus;
+  genre?: string;
+  subgenre?: string;
+  language?: string;
+  isrc?: string;
+  release_date?: string;
+  credits?: string;
+  description_short?: string;
+  description_long?: string;
+  cover_url?: string;
+  cover_prompt?: string;
+  visual_prompt_cover?: string;
+  visual_prompt_canvas?: string;
+  visual_prompt_short_video?: string;
+  visual_prompt_lyric_video?: string;
+  notas_internas?: string;
   fecha_creacion: string;
   fecha_actualizacion?: string;
 };
@@ -64,7 +92,30 @@ export type CatalogRow = {
   image_url?: string;
   video_url?: string;
   clip_id?: string;
+  duration?: string | number;
+  versions_received?: number;
+  selected_version_policy?: string;
   error_detalle?: string;
+  audio_final_status: AudioFinalStatus;
+  master_status: MasterStatus;
+  cover_status: AssetStatus;
+  metadata_status: MetadataStatus;
+  distribution_status: DistributionStatus;
+  genre?: string;
+  subgenre?: string;
+  language?: string;
+  isrc?: string;
+  release_date?: string;
+  credits?: string;
+  description_short?: string;
+  description_long?: string;
+  cover_url?: string;
+  cover_prompt?: string;
+  visual_prompt_cover?: string;
+  visual_prompt_canvas?: string;
+  visual_prompt_short_video?: string;
+  visual_prompt_lyric_video?: string;
+  notas_internas?: string;
   fecha_creacion: string;
   fecha_actualizacion?: string;
 };
@@ -144,6 +195,44 @@ const normalizeAlbumForStore = (album: Partial<Album>): Album => {
   };
 };
 
+const normalizeTrackForStore = (track: Partial<Track>): Track => ({
+  id: Number(track.id || 0),
+  album_id: Number(track.album_id || 0),
+  titulo: String(track.titulo || 'Track sin título'),
+  genero_prompt: String(track.genero_prompt || ''),
+  audio_url: track.audio_url,
+  image_url: track.image_url,
+  video_url: track.video_url,
+  clip_id: track.clip_id,
+  duration: track.duration,
+  versions_received: track.versions_received,
+  selected_version_policy: track.selected_version_policy,
+  estado: (track.estado || 'Pendiente') as TrackStatus,
+  error_detalle: track.error_detalle,
+  audio_final_status: track.audio_final_status || 'Pendiente',
+  master_status: track.master_status || 'Pendiente',
+  cover_status: track.cover_status || 'Pendiente',
+  metadata_status: track.metadata_status || 'Pendiente',
+  distribution_status: track.distribution_status || 'Pendiente',
+  genre: track.genre,
+  subgenre: track.subgenre,
+  language: track.language,
+  isrc: track.isrc,
+  release_date: track.release_date,
+  credits: track.credits,
+  description_short: track.description_short,
+  description_long: track.description_long,
+  cover_url: track.cover_url,
+  cover_prompt: track.cover_prompt,
+  visual_prompt_cover: track.visual_prompt_cover,
+  visual_prompt_canvas: track.visual_prompt_canvas,
+  visual_prompt_short_video: track.visual_prompt_short_video,
+  visual_prompt_lyric_video: track.visual_prompt_lyric_video,
+  notas_internas: track.notas_internas,
+  fecha_creacion: track.fecha_creacion || nowIso(),
+  fecha_actualizacion: track.fecha_actualizacion,
+});
+
 export const readCatalogStore = (): CatalogStore => {
   ensureDataDir();
   const file = dataFile();
@@ -156,7 +245,7 @@ export const readCatalogStore = (): CatalogStore => {
       ...parsed,
       artists: parsed.artists || [],
       albums: (parsed.albums || []).map(album => normalizeAlbumForStore(album)),
-      tracks: parsed.tracks || [],
+      tracks: (parsed.tracks || []).map(track => normalizeTrackForStore(track)),
     };
   } catch {
     return defaultStore();
@@ -238,6 +327,11 @@ const createOrUpdateTrack = (store: CatalogStore, albumId: number, titulo: strin
     titulo: cleanTitle,
     genero_prompt: cleanPrompt,
     estado: 'Pendiente',
+    audio_final_status: 'Pendiente',
+    master_status: 'Pendiente',
+    cover_status: 'Pendiente',
+    metadata_status: 'Pendiente',
+    distribution_status: 'Pendiente',
     fecha_creacion: nowIso(),
   };
   store.tracks.push(track);
@@ -327,7 +421,30 @@ export const getCatalogRows = (): CatalogRow[] => {
       image_url: track.image_url,
       video_url: track.video_url,
       clip_id: track.clip_id,
+      duration: track.duration,
+      versions_received: track.versions_received,
+      selected_version_policy: track.selected_version_policy,
       error_detalle: track.error_detalle,
+      audio_final_status: track.audio_final_status || 'Pendiente',
+      master_status: track.master_status || 'Pendiente',
+      cover_status: track.cover_status || 'Pendiente',
+      metadata_status: track.metadata_status || 'Pendiente',
+      distribution_status: track.distribution_status || 'Pendiente',
+      genre: track.genre,
+      subgenre: track.subgenre,
+      language: track.language,
+      isrc: track.isrc,
+      release_date: track.release_date,
+      credits: track.credits,
+      description_short: track.description_short,
+      description_long: track.description_long,
+      cover_url: track.cover_url,
+      cover_prompt: track.cover_prompt,
+      visual_prompt_cover: track.visual_prompt_cover,
+      visual_prompt_canvas: track.visual_prompt_canvas,
+      visual_prompt_short_video: track.visual_prompt_short_video,
+      visual_prompt_lyric_video: track.visual_prompt_lyric_video,
+      notas_internas: track.notas_internas,
       fecha_creacion: track.fecha_creacion,
       fecha_actualizacion: track.fecha_actualizacion,
     };
@@ -377,6 +494,9 @@ export const getCatalogSummary = () => {
     generando: byStatus.Generando || 0,
     completadas: byStatus.Completada || 0,
     errores: byStatus.Error || 0,
+    aprobadas: store.tracks.filter(t => t.audio_final_status === 'Aprobado').length,
+    metadata_completa: store.tracks.filter(t => t.metadata_status === 'Completa').length,
+    distribuidas: store.tracks.filter(t => t.distribution_status === 'Distribuido' || t.distribution_status === 'Publicado').length,
     por_estado: byStatus,
     storage: getCatalogStorageInfo(),
   };
@@ -386,6 +506,10 @@ export const getNextPendingTracks = (limit = 1) => {
   return getCatalogRows()
     .filter(row => row.estado === 'Pendiente' || row.estado === 'Reintentar')
     .slice(0, Math.max(1, Math.min(limit, 5)));
+};
+
+export const getGeneratedTracksToRefresh = () => {
+  return getCatalogRows().filter(row => Boolean(row.clip_id) && (row.estado === 'Generando' || !row.audio_url));
 };
 
 export const buildSunoPromptFromCatalogRow = (row: CatalogRow) => {
@@ -405,6 +529,19 @@ export const updateTrackStatus = (trackId: number, updates: Partial<Track>) => {
   if (!track) throw new Error(`Track no encontrado: ${trackId}`);
 
   Object.assign(track, updates, { fecha_actualizacion: nowIso() });
+  writeCatalogStore(store);
+  return track;
+};
+
+export const approveTrackAudio = (trackId: number) => {
+  const store = readCatalogStore();
+  const track = store.tracks.find(t => t.id === trackId);
+  if (!track) throw new Error(`Track no encontrado: ${trackId}`);
+  if (!track.audio_url) throw new Error('No se puede aprobar un audio sin audio_url.');
+
+  track.audio_final_status = 'Aprobado';
+  track.estado = 'Completada';
+  track.fecha_actualizacion = nowIso();
   writeCatalogStore(store);
   return track;
 };
