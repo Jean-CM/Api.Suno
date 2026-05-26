@@ -5,6 +5,8 @@ import { getCorsHeaders, requireApiKey } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
+const SELECTION_POLICY = 'smallest_file_then_shortest_duration';
+
 const getClipDuration = (clip: any): number | null => {
   const candidates = [
     clip?.duration,
@@ -15,6 +17,27 @@ const getClipDuration = (clip: any): number | null => {
     clip?.metadata?.durationSeconds,
     clip?.audio_duration,
     clip?.audioDuration,
+  ];
+
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+
+  return null;
+};
+
+const getClipSize = (clip: any): number | null => {
+  const candidates = [
+    clip?.file_size,
+    clip?.fileSize,
+    clip?.size,
+    clip?.audio_size,
+    clip?.audioSize,
+    clip?.metadata?.file_size,
+    clip?.metadata?.fileSize,
+    clip?.metadata?.audio_size,
+    clip?.metadata?.audioSize,
   ];
 
   for (const value of candidates) {
@@ -40,6 +63,15 @@ const selectBestClip = (response: any) => {
   const withAudio = clips.filter((clip) => Boolean(clip?.audio_url));
   const candidates = withAudio.length > 0 ? withAudio : clips;
 
+  const withSize = candidates
+    .map((clip) => ({ clip, size: getClipSize(clip), duration: getClipDuration(clip) }))
+    .filter((item) => item.size !== null) as Array<{ clip: any; size: number; duration: number | null }>;
+
+  if (withSize.length > 0) {
+    withSize.sort((a, b) => a.size - b.size || (a.duration || 99999) - (b.duration || 99999));
+    return withSize[0].clip;
+  }
+
   const withDuration = candidates
     .map((clip) => ({ clip, duration: getClipDuration(clip) }))
     .filter((item) => item.duration !== null) as Array<{ clip: any; duration: number }>;
@@ -58,7 +90,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const limit = Math.max(1, Math.min(Number(body?.limit || 1), 3));
+    // Suno suele entregar 2 audios por canción. 5 pendientes = hasta 10 audios, controlado y estable.
+    const limit = Math.max(1, Math.min(Number(body?.limit || 5), 5));
     const waitAudio = Boolean(body?.wait_audio ?? false);
     const makeInstrumental = Boolean(body?.make_instrumental ?? false);
 
@@ -71,9 +104,10 @@ export async function POST(request: NextRequest) {
         const prompt = buildSunoPromptFromCatalogRow(row);
         const api = await sunoApi();
         const generated = await api.generate(prompt, makeInstrumental, body?.model || DEFAULT_MODEL, waitAudio);
+        const clips = getClips(generated);
         const clip = selectBestClip(generated);
         const selectedDuration = getClipDuration(clip);
-        const totalVersions = getClips(generated).length;
+        const selectedSize = getClipSize(clip);
 
         const status = clip?.audio_url ? 'Completada' : 'Generando';
         updateTrackStatus(row.cancion_id, {
@@ -82,6 +116,9 @@ export async function POST(request: NextRequest) {
           audio_url: clip?.audio_url,
           image_url: clip?.image_url,
           video_url: clip?.video_url,
+          duration: selectedDuration || undefined,
+          versions_received: clips.length,
+          selected_version_policy: SELECTION_POLICY,
           error_detalle: undefined,
         });
 
@@ -90,9 +127,10 @@ export async function POST(request: NextRequest) {
           track_id: row.cancion_id,
           title: row.cancion,
           status,
-          selected_policy: 'shortest_duration_available',
+          selected_policy: SELECTION_POLICY,
           selected_duration: selectedDuration,
-          versions_received: totalVersions,
+          selected_size: selectedSize,
+          versions_received: clips.length,
           clip,
         });
       } catch (error: any) {
@@ -102,7 +140,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: true, processed: results.length, selection_policy: 'shortest_duration_available', results },
+      { ok: true, processed: results.length, selection_policy: SELECTION_POLICY, results },
       { status: 200, headers: getCorsHeaders(request) }
     );
   } catch (error: any) {
