@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Summary = {
   artistas: number;
@@ -19,6 +19,7 @@ type Summary = {
 type Track = {
   cancion_id: number;
   artista: string;
+  album_id: number;
   album: string;
   tipo: string;
   workspace_name?: string;
@@ -36,6 +37,7 @@ type Track = {
   cover_status?: string;
   metadata_status?: string;
   distribution_status?: string;
+  cover_url?: string;
 };
 
 type Workspace = {
@@ -61,6 +63,20 @@ type ApiOptions = {
   method?: 'GET' | 'POST';
   apiKey?: string;
   body?: string;
+};
+
+type DistributionPackage = {
+  ok: boolean;
+  exported_at: string;
+  summary: {
+    workspaces: number;
+    tracks: number;
+    audios_aprobados: number;
+    listos_para_subir: number;
+    assets: number;
+  };
+  tracks: Array<any>;
+  asset_links: Array<{ type: string; track_id: number; title: string; url: string }>;
 };
 
 const sampleCatalog = `Zyphorix | Galactic Vibe | EP | Nebula Dance | Dembow Dominicano, Bajo Pesado, 120 BPM
@@ -100,11 +116,18 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [filter, setFilter] = useState('Todos');
+  const [exportType, setExportType] = useState('Todos');
+  const [exportAlbumId, setExportAlbumId] = useState('');
+  const [distributionPackage, setDistributionPackage] = useState<DistributionPackage | null>(null);
 
   const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
   const errorTracks = tracks.filter((track) => track.estado === 'Error');
   const refreshCandidates = tracks.filter((track) => track.clip_id && (track.estado === 'Generando' || !track.audio_url));
   const syncCandidates = workspaces.filter((workspace) => ['Álbum', 'EP'].includes(workspace.tipo) && workspace.workspace_status !== 'Creado');
+
+  const exportProjects = useMemo(() => {
+    return workspaces.filter((workspace) => exportType === 'Todos' || workspace.tipo === exportType);
+  }, [workspaces, exportType]);
 
   const saveKeyPreference = (key: string, remember: boolean) => {
     if (remember && key.trim()) window.localStorage.setItem(STORAGE_KEY, key.trim());
@@ -248,6 +271,52 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     }
   };
 
+  const exportDistribution = async () => {
+    setBusy(true);
+    setMessage('');
+    saveKeyPreference(apiKey, rememberKey);
+
+    try {
+      const payload: Record<string, string | number> = {};
+      if (exportType !== 'Todos') payload.tipo = exportType;
+      if (exportAlbumId) payload.album_id = Number(exportAlbumId);
+
+      const data = await apiRequest('/api/catalog/export-distribution', {
+        method: 'POST',
+        apiKey,
+        body: JSON.stringify(payload),
+      });
+
+      setDistributionPackage(data as DistributionPackage);
+      setMessage(`Paquete generado: ${data.summary?.tracks ?? 0} canciones, ${data.summary?.assets ?? 0} activos, ${data.summary?.listos_para_subir ?? 0} listas para subir.`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error exportando paquete: ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadPackageJson = () => {
+    if (!distributionPackage) return;
+    const blob = new Blob([JSON.stringify(distributionPackage, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `jatune-distribution-package-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const openAllAssets = () => {
+    if (!distributionPackage) return;
+    distributionPackage.asset_links.slice(0, 25).forEach((asset, index) => {
+      setTimeout(() => window.open(asset.url, '_blank'), index * 250);
+    });
+  };
+
   const metricCards: Array<[string, number, string]> = [
     ['Artistas', summary.artistas, 'text-yellow-200'],
     ['Workspaces lógicos', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
@@ -272,7 +341,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <div>
             <p className="font-black text-yellow-200">Clave operativa del dashboard</p>
             <p className="mt-1 text-yellow-100/80">
-              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar, generar, refrescar o aprobar audios.
+              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar, generar, refrescar, aprobar y exportar.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
@@ -288,7 +357,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       <div className="rounded-3xl border border-sky-300/20 bg-sky-300/[0.06] p-5 text-sm text-sky-100">
         <p className="font-black text-sky-200">Flujo actual</p>
         <p className="mt-1 text-sky-100/80">
-          JATune organiza catálogo, álbumes, estados y aprobación final. Suno se usa como motor de creación y fuente de audio. Cuando una canción quede generando, usa <strong>Refrescar audios desde Suno</strong> para traer el audio_url final.
+          JATune organiza catálogo, álbumes, estados, aprobación final y paquete de distribución. Suno se queda como motor de creación y fuente de audio/portada.
         </p>
       </div>
 
@@ -327,6 +396,51 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           </div>
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
         </div>
+      </div>
+
+      <div className="rounded-3xl border border-amber-300/20 bg-amber-300/[0.06] p-5 shadow-xl lg:p-7">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-xl font-black sm:text-2xl">Exportar paquete de distribución</h2>
+            <p className="mt-1 text-sm text-slate-400">Filtra por Álbum, EP o Sencillo y genera un manifiesto con audios, portada, video, metadata y checklist.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[760px]">
+            <select value={exportType} onChange={(event) => { setExportType(event.target.value); setExportAlbumId(''); }} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">
+              {['Todos', 'Álbum', 'EP', 'Sencillo'].map((item) => <option key={item}>{item}</option>)}
+            </select>
+            <select value={exportAlbumId} onChange={(event) => setExportAlbumId(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">
+              <option value="">Todos los proyectos</option>
+              {exportProjects.map((workspace) => <option key={workspace.album_id} value={workspace.album_id}>{workspace.album} · {workspace.artista}</option>)}
+            </select>
+            <button onClick={exportDistribution} disabled={busy} className="rounded-2xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">Generar paquete</button>
+          </div>
+        </div>
+
+        {distributionPackage && (
+          <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-5">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div><p className="text-xs text-slate-500">Canciones</p><p className="text-2xl font-black text-white">{distributionPackage.summary.tracks}</p></div>
+              <div><p className="text-xs text-slate-500">Activos</p><p className="text-2xl font-black text-amber-200">{distributionPackage.summary.assets}</p></div>
+              <div><p className="text-xs text-slate-500">Aprobadas</p><p className="text-2xl font-black text-lime-300">{distributionPackage.summary.audios_aprobados}</p></div>
+              <div><p className="text-xs text-slate-500">Listas</p><p className="text-2xl font-black text-emerald-300">{distributionPackage.summary.listos_para_subir}</p></div>
+            </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <button onClick={downloadPackageJson} className="min-h-11 rounded-2xl border border-amber-300/30 bg-amber-300/10 px-5 text-sm font-black text-amber-100">Descargar manifiesto JSON</button>
+              <button onClick={openAllAssets} className="min-h-11 rounded-2xl border border-white/10 bg-slate-900 px-5 text-sm font-black text-slate-100">Abrir activos ({Math.min(distributionPackage.asset_links.length, 25)})</button>
+            </div>
+            <div className="mt-5 max-h-72 overflow-auto rounded-xl border border-white/10">
+              {distributionPackage.tracks.map((track) => (
+                <div key={track.track_id} className="grid grid-cols-12 gap-3 border-b border-white/10 p-3 text-xs text-slate-300 last:border-b-0">
+                  <div className="col-span-3 font-bold text-white">{track.titulo}</div>
+                  <div className="col-span-2">Audio: {track.audio_url ? 'OK' : '—'}</div>
+                  <div className="col-span-2">Cover: {track.cover_url ? 'OK' : '—'}</div>
+                  <div className="col-span-2">Meta: {track.metadata_status}</div>
+                  <div className="col-span-3">Listo: {track.checklist?.listo_para_subir ? 'Sí' : 'Pendiente'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="rounded-3xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] p-5 shadow-xl lg:p-7">
