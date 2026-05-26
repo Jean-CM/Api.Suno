@@ -11,6 +11,9 @@ type Summary = {
   generando: number;
   completadas: number;
   errores: number;
+  aprobadas?: number;
+  metadata_completa?: number;
+  distribuidas?: number;
 };
 
 type Track = {
@@ -23,7 +26,16 @@ type Track = {
   genero_prompt: string;
   estado: string;
   audio_url?: string;
+  clip_id?: string;
+  duration?: string | number;
+  versions_received?: number;
+  selected_version_policy?: string;
   error_detalle?: string;
+  audio_final_status?: string;
+  master_status?: string;
+  cover_status?: string;
+  metadata_status?: string;
+  distribution_status?: string;
 };
 
 type Workspace = {
@@ -91,6 +103,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
 
   const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
   const errorTracks = tracks.filter((track) => track.estado === 'Error');
+  const refreshCandidates = tracks.filter((track) => track.clip_id && (track.estado === 'Generando' || !track.audio_url));
   const syncCandidates = workspaces.filter((workspace) => ['Álbum', 'EP'].includes(workspace.tipo) && workspace.workspace_status !== 'Creado');
 
   const saveKeyPreference = (key: string, remember: boolean) => {
@@ -153,11 +166,44 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
       });
       const failed = (data.results || []).filter((item: { ok: boolean }) => !item.ok);
-      setMessage(failed.length ? `Generación procesada con error: ${failed[0]?.error || 'Error no especificado'}` : `Generación ejecutada: ${data.processed} canción procesada.`);
+      const selected = data.results?.[0];
+      setMessage(failed.length ? `Generación procesada con error: ${failed[0]?.error || 'Error no especificado'}` : `Generación ejecutada: ${data.processed} canción. Versiones recibidas: ${selected?.versions_received ?? 'N/D'}. Política: ${data.selection_policy || 'N/D'}.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
       setMessage(`Error: ${detail}. Revisa que JATUNE_API_KEY sea igual a la variable configurada en Render.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshGenerated = async () => {
+    setBusy(true);
+    setMessage('');
+    saveKeyPreference(apiKey, rememberKey);
+    try {
+      const data = await apiRequest('/api/catalog/refresh-generated', { method: 'POST', apiKey });
+      setMessage(`Audios refrescados desde Suno: ${data.checked}.`);
+      await refreshCatalog();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error refrescando audios: ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const approveAudio = async (trackId: number, title: string) => {
+    setBusy(true);
+    setMessage('');
+    saveKeyPreference(apiKey, rememberKey);
+    try {
+      await apiRequest('/api/catalog/approve-audio', { method: 'POST', apiKey, body: JSON.stringify({ track_id: trackId }) });
+      setMessage(`Audio aprobado como versión final: ${title}.`);
+      await refreshCatalog();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error aprobando audio: ${detail}`);
     } finally {
       setBusy(false);
     }
@@ -205,9 +251,9 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const metricCards: Array<[string, number, string]> = [
     ['Artistas', summary.artistas, 'text-yellow-200'],
     ['Workspaces lógicos', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
-    ['Álbumes / EPs', summary.albumes, 'text-violet-300'],
     ['Canciones', summary.canciones, 'text-sky-300'],
-    ['Pendientes', summary.pendientes, 'text-emerald-300'],
+    ['Completadas', summary.completadas, 'text-emerald-300'],
+    ['Aprobadas', summary.aprobadas ?? 0, 'text-lime-300'],
   ];
 
   return (
@@ -226,7 +272,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <div>
             <p className="font-black text-yellow-200">Clave operativa del dashboard</p>
             <p className="mt-1 text-yellow-100/80">
-              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar, generar o crear workspaces reales.
+              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar, generar, refrescar o aprobar audios.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
@@ -240,9 +286,9 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       </div>
 
       <div className="rounded-3xl border border-sky-300/20 bg-sky-300/[0.06] p-5 text-sm text-sky-100">
-        <p className="font-black text-sky-200">Nota de operación</p>
+        <p className="font-black text-sky-200">Flujo actual</p>
         <p className="mt-1 text-sky-100/80">
-          Los workspaces lógicos organizan el catálogo en JATune. Para <strong>Álbum</strong> y <strong>EP</strong>, usa el botón de sincronización para intentar crear el workspace real dentro de Suno. Los sencillos se mantienen como control interno.
+          JATune organiza catálogo, álbumes, estados y aprobación final. Suno se usa como motor de creación y fuente de audio. Cuando una canción quede generando, usa <strong>Refrescar audios desde Suno</strong> para traer el audio_url final.
         </p>
       </div>
 
@@ -256,26 +302,29 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
             <button onClick={() => setBulkText(sampleCatalog)} className="rounded-full border border-white/10 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800">Plantilla</button>
           </div>
           <textarea value={bulkText} onChange={(event) => setBulkText(event.target.value)} className="mt-5 h-80 w-full resize-y rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4" />
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button onClick={importCatalog} disabled={busy} className="min-h-12 rounded-2xl bg-yellow-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Importar catálogo y crear workspaces'}</button>
-            <button onClick={refreshCatalog} disabled={busy} className="min-h-12 rounded-2xl border border-white/10 bg-slate-900 px-6 font-black text-slate-100 disabled:opacity-50">Refrescar</button>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button onClick={importCatalog} disabled={busy} className="min-h-12 rounded-2xl bg-yellow-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Importar catálogo'}</button>
+            <button onClick={refreshCatalog} disabled={busy} className="min-h-12 rounded-2xl border border-white/10 bg-slate-900 px-6 font-black text-slate-100 disabled:opacity-50">Refrescar catálogo</button>
           </div>
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-black sm:text-2xl">Generación desde pendientes</h2>
-              <p className="mt-1 text-sm text-slate-400">Procesa una canción por ejecución para cuidar estabilidad y créditos.</p>
+              <h2 className="text-xl font-black sm:text-2xl">Producción musical</h2>
+              <p className="mt-1 text-sm text-slate-400">Genera, refresca y aprueba audio final desde JATune.</p>
             </div>
             <button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar 1 pendiente'}</button>
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[['Pendiente', summary.pendientes, 'text-yellow-200'], ['Generando', summary.generando, 'text-sky-300'], ['Completada', summary.completadas, 'text-emerald-300'], ['Error', summary.errores, 'text-rose-300']].map(([label, value, colorClass]) => (
+            {[['Pend.', summary.pendientes, 'text-yellow-200'], ['Gen.', summary.generando, 'text-sky-300'], ['OK', summary.completadas, 'text-emerald-300'], ['Error', summary.errores, 'text-rose-300']].map(([label, value, colorClass]) => (
               <div key={String(label)} className="rounded-2xl border border-white/10 bg-slate-900 p-4"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p><p className={`mt-2 text-2xl font-black ${colorClass}`}>{value}</p></div>
             ))}
           </div>
-          {errorTracks.length > 0 && <button onClick={retryErrors} disabled={busy} className="mt-5 min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">Marcar {errorTracks.length} error(es) para reintento</button>}
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button onClick={refreshGenerated} disabled={busy || refreshCandidates.length === 0} className="min-h-11 rounded-2xl border border-sky-300/30 bg-sky-300/10 px-5 text-sm font-black text-sky-100 disabled:opacity-50">Refrescar audios desde Suno ({refreshCandidates.length})</button>
+            {errorTracks.length > 0 && <button onClick={retryErrors} disabled={busy} className="min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">Marcar {errorTracks.length} error(es) para reintento</button>}
+          </div>
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
         </div>
       </div>
@@ -284,7 +333,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-black sm:text-2xl">Workspaces JATune / Suno</h2>
-            <p className="mt-1 text-sm text-slate-400">Álbumes y EPs pueden sincronizarse como workspace real en Suno.</p>
+            <p className="mt-1 text-sm text-slate-400">Álbumes y EPs pueden sincronizarse como workspace real en Suno, pero JATune sigue siendo el sistema maestro.</p>
           </div>
           <button onClick={() => syncSunoWorkspace()} disabled={busy || syncCandidates.length === 0} className="w-fit rounded-2xl bg-fuchsia-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">
             {busy ? 'Procesando...' : `Crear siguiente Álbum/EP en Suno (${syncCandidates.length})`}
@@ -320,7 +369,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Catálogo musical</h2><p className="mt-1 text-sm text-slate-400">Vista operativa Artista → Workspace/Proyecto → Track.</p></div><select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{['Todos', 'Pendiente', 'Generando', 'Completada', 'Error', 'Reintentar'].map((status) => <option key={status}>{status}</option>)}</select></div>
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10"><div className="min-w-[1280px]"><div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500"><div className="col-span-2">Artista</div><div className="col-span-3">Workspace</div><div className="col-span-2">Canción</div><div className="col-span-2">Prompt</div><div className="col-span-1">Estado</div><div className="col-span-1">Audio</div><div className="col-span-1">Error</div></div>{filteredTracks.length === 0 ? <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div> : filteredTracks.slice(0, 80).map((track) => <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200"><div className="col-span-2 font-semibold">{track.artista}</div><div className="col-span-3 text-slate-300">{track.workspace_name || track.album}</div><div className="col-span-2 text-slate-300">{track.cancion}</div><div className="col-span-2 truncate text-slate-500">{track.genero_prompt}</div><div className="col-span-1"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{track.estado}</span></div><div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div><div className="col-span-1 truncate text-rose-200">{track.error_detalle || '—'}</div></div>)}</div></div>
+        <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10"><div className="min-w-[1500px]"><div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500"><div className="col-span-2">Artista</div><div className="col-span-2">Workspace</div><div className="col-span-2">Canción</div><div className="col-span-1">Estado</div><div className="col-span-1">Audio</div><div className="col-span-1">Final</div><div className="col-span-1">Master</div><div className="col-span-1">Meta</div><div className="col-span-1">Acción</div></div>{filteredTracks.length === 0 ? <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div> : filteredTracks.slice(0, 80).map((track) => <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200"><div className="col-span-2 font-semibold">{track.artista}</div><div className="col-span-2 truncate text-slate-300">{track.workspace_name || track.album}</div><div className="col-span-2 text-slate-300">{track.cancion}</div><div className="col-span-1"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{track.estado}</span></div><div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div><div className="col-span-1 text-xs text-slate-300">{track.audio_final_status || 'Pendiente'}</div><div className="col-span-1 text-xs text-slate-300">{track.master_status || 'Pendiente'}</div><div className="col-span-1 text-xs text-slate-300">{track.metadata_status || 'Pendiente'}</div><div className="col-span-1">{track.audio_url && track.audio_final_status !== 'Aprobado' ? <button onClick={() => approveAudio(track.cancion_id, track.cancion)} disabled={busy} className="rounded-lg bg-lime-300 px-3 py-1 text-xs font-black text-slate-950 disabled:opacity-50">Aprobar</button> : <span className="text-slate-600">—</span>}</div></div>)}</div></div>
       </div>
     </div>
   );
