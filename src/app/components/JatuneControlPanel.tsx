@@ -31,6 +31,7 @@ type Workspace = {
   album_id: number;
   workspace_name: string;
   workspace_status: string;
+  workspace_error?: string;
   artista: string;
   album: string;
   tipo: string;
@@ -52,8 +53,8 @@ type ApiOptions = {
 
 const sampleCatalog = `Zyphorix | Galactic Vibe | EP | Nebula Dance | Dembow Dominicano, Bajo Pesado, 120 BPM
 Zyphorix | Galactic Vibe | EP | Solar Flare | Spatial Trap, Sintetizadores Futuristas
-Velnora | Sentimiento Puro | Sencillo | Sabor Calle | Bachata Urbana, Guitarra Afilada
-Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Synth Latino, 95 BPM`;
+Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Synth Latino, 95 BPM
+Velnora | Sentimiento Puro | Sencillo | Sabor Calle | Bachata Urbana, Guitarra Afilada`;
 
 const STORAGE_KEY = 'jatune_api_key';
 
@@ -73,9 +74,7 @@ async function apiRequest(path: string, options: ApiOptions = {}) {
   });
 
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || data?.code || 'Solicitud fallida');
-  }
+  if (!response.ok) throw new Error(data?.message || data?.code || 'Solicitud fallida');
   return data;
 }
 
@@ -92,13 +91,11 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
 
   const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
   const errorTracks = tracks.filter((track) => track.estado === 'Error');
+  const syncCandidates = workspaces.filter((workspace) => ['Álbum', 'EP'].includes(workspace.tipo) && workspace.workspace_status !== 'Creado');
 
   const saveKeyPreference = (key: string, remember: boolean) => {
-    if (remember && key.trim()) {
-      window.localStorage.setItem(STORAGE_KEY, key.trim());
-    } else {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    if (remember && key.trim()) window.localStorage.setItem(STORAGE_KEY, key.trim());
+    else window.localStorage.removeItem(STORAGE_KEY);
   };
 
   const refreshCatalog = async () => {
@@ -133,7 +130,6 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         apiKey,
         body: JSON.stringify({ text: bulkText }),
       });
-
       const planned = data.summary?.workspaces_planificados ?? 0;
       setMessage(`Catálogo importado: ${data.imported} registros. Workspaces lógicos planificados: ${planned}.`);
       await refreshCatalog();
@@ -156,14 +152,8 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         apiKey,
         body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
       });
-
       const failed = (data.results || []).filter((item: { ok: boolean }) => !item.ok);
-      if (failed.length > 0) {
-        const firstError = failed[0]?.error || 'Error no especificado';
-        setMessage(`Generación procesada con error: ${firstError}`);
-      } else {
-        setMessage(`Generación ejecutada: ${data.processed} canción procesada.`);
-      }
+      setMessage(failed.length ? `Generación procesada con error: ${failed[0]?.error || 'Error no especificado'}` : `Generación ejecutada: ${data.processed} canción procesada.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
@@ -179,15 +169,34 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     saveKeyPreference(apiKey, rememberKey);
 
     try {
-      const data = await apiRequest('/api/catalog/retry-errors', {
-        method: 'POST',
-        apiKey,
-      });
+      const data = await apiRequest('/api/catalog/retry-errors', { method: 'POST', apiKey });
       setMessage(`Errores marcados para reintento: ${data.updated}.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
       setMessage(`Error: ${detail}. Revisa la clave operativa.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncSunoWorkspace = async (albumId?: number) => {
+    setBusy(true);
+    setMessage('');
+    saveKeyPreference(apiKey, rememberKey);
+
+    try {
+      const data = await apiRequest('/api/suno/workspaces/sync', {
+        method: 'POST',
+        apiKey,
+        body: JSON.stringify(albumId ? { album_id: albumId } : {}),
+      });
+      setMessage(`Workspace creado/confirmado en Suno: ${data.workspace?.workspace_name || 'sin nombre'}.`);
+      await refreshCatalog();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error creando workspace real en Suno: ${detail}`);
+      await refreshCatalog().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -217,26 +226,13 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <div>
             <p className="font-black text-yellow-200">Clave operativa del dashboard</p>
             <p className="mt-1 text-yellow-100/80">
-              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar o generar.
+              Pega aquí la misma clave configurada en Render como <strong>JATUNE_API_KEY</strong>. Se enviará como header <strong>x-api-key</strong> al importar, generar o crear workspaces reales.
             </p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
-            <input
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="Pega aquí tu JATUNE_API_KEY"
-              className="min-h-12 w-full rounded-2xl border border-yellow-300/20 bg-slate-950 px-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4"
-              type="password"
-            />
+            <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Pega aquí tu JATUNE_API_KEY" className="min-h-12 w-full rounded-2xl border border-yellow-300/20 bg-slate-950 px-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4" type="password" />
             <label className="flex items-center gap-2 text-xs text-yellow-100/80">
-              <input
-                type="checkbox"
-                checked={rememberKey}
-                onChange={(event) => {
-                  setRememberKey(event.target.checked);
-                  saveKeyPreference(apiKey, event.target.checked);
-                }}
-              />
+              <input type="checkbox" checked={rememberKey} onChange={(event) => { setRememberKey(event.target.checked); saveKeyPreference(apiKey, event.target.checked); }} />
               Recordar en este navegador
             </label>
           </div>
@@ -246,7 +242,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       <div className="rounded-3xl border border-sky-300/20 bg-sky-300/[0.06] p-5 text-sm text-sky-100">
         <p className="font-black text-sky-200">Nota de operación</p>
         <p className="mt-1 text-sky-100/80">
-          Los workspaces que ves aquí son internos de JATune para organizar el catálogo. Todavía no crean carpetas/workspaces reales dentro de Suno. La sincronización real con Suno se implementará como conector separado para evitar romper la generación.
+          Los workspaces lógicos organizan el catálogo en JATune. Para <strong>Álbum</strong> y <strong>EP</strong>, usa el botón de sincronización para intentar crear el workspace real dentro de Suno. Los sencillos se mantienen como control interno.
         </p>
       </div>
 
@@ -257,22 +253,12 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
               <h2 className="text-xl font-black sm:text-2xl">Carga masiva estructurada</h2>
               <p className="mt-1 text-sm text-slate-400">Cada proyecto se convierte en workspace lógico tipo Suno.</p>
             </div>
-            <button onClick={() => setBulkText(sampleCatalog)} className="rounded-full border border-white/10 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800">
-              Plantilla
-            </button>
+            <button onClick={() => setBulkText(sampleCatalog)} className="rounded-full border border-white/10 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800">Plantilla</button>
           </div>
-          <textarea
-            value={bulkText}
-            onChange={(event) => setBulkText(event.target.value)}
-            className="mt-5 h-80 w-full resize-y rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4"
-          />
+          <textarea value={bulkText} onChange={(event) => setBulkText(event.target.value)} className="mt-5 h-80 w-full resize-y rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4" />
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button onClick={importCatalog} disabled={busy} className="min-h-12 rounded-2xl bg-yellow-300 px-6 font-black text-slate-950 disabled:opacity-50">
-              {busy ? 'Procesando...' : 'Importar catálogo y crear workspaces'}
-            </button>
-            <button onClick={refreshCatalog} disabled={busy} className="min-h-12 rounded-2xl border border-white/10 bg-slate-900 px-6 font-black text-slate-100 disabled:opacity-50">
-              Refrescar
-            </button>
+            <button onClick={importCatalog} disabled={busy} className="min-h-12 rounded-2xl bg-yellow-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Importar catálogo y crear workspaces'}</button>
+            <button onClick={refreshCatalog} disabled={busy} className="min-h-12 rounded-2xl border border-white/10 bg-slate-900 px-6 font-black text-slate-100 disabled:opacity-50">Refrescar</button>
           </div>
         </div>
 
@@ -282,121 +268,59 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
               <h2 className="text-xl font-black sm:text-2xl">Generación desde pendientes</h2>
               <p className="mt-1 text-sm text-slate-400">Procesa una canción por ejecución para cuidar estabilidad y créditos.</p>
             </div>
-            <button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">
-              {busy ? 'Procesando...' : 'Generar 1 pendiente'}
-            </button>
+            <button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar 1 pendiente'}</button>
           </div>
-
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              ['Pendiente', summary.pendientes, 'text-yellow-200'],
-              ['Generando', summary.generando, 'text-sky-300'],
-              ['Completada', summary.completadas, 'text-emerald-300'],
-              ['Error', summary.errores, 'text-rose-300'],
-            ].map(([label, value, colorClass]) => (
-              <div key={String(label)} className="rounded-2xl border border-white/10 bg-slate-900 p-4">
-                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p>
-                <p className={`mt-2 text-2xl font-black ${colorClass}`}>{value}</p>
-              </div>
+            {[['Pendiente', summary.pendientes, 'text-yellow-200'], ['Generando', summary.generando, 'text-sky-300'], ['Completada', summary.completadas, 'text-emerald-300'], ['Error', summary.errores, 'text-rose-300']].map(([label, value, colorClass]) => (
+              <div key={String(label)} className="rounded-2xl border border-white/10 bg-slate-900 p-4"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p><p className={`mt-2 text-2xl font-black ${colorClass}`}>{value}</p></div>
             ))}
           </div>
-
-          {errorTracks.length > 0 && (
-            <button onClick={retryErrors} disabled={busy} className="mt-5 min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">
-              Marcar {errorTracks.length} error(es) para reintento
-            </button>
-          )}
-
+          {errorTracks.length > 0 && <button onClick={retryErrors} disabled={busy} className="mt-5 min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">Marcar {errorTracks.length} error(es) para reintento</button>}
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
         </div>
       </div>
 
       <div className="rounded-3xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] p-5 shadow-xl lg:p-7">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-black sm:text-2xl">Workspaces lógicos JATune</h2>
-            <p className="mt-1 text-sm text-slate-400">Control interno por proyecto. Aún no sincronizado con workspaces reales de Suno.</p>
+            <h2 className="text-xl font-black sm:text-2xl">Workspaces JATune / Suno</h2>
+            <p className="mt-1 text-sm text-slate-400">Álbumes y EPs pueden sincronizarse como workspace real en Suno.</p>
           </div>
-          <span className="w-fit rounded-full border border-white/10 bg-slate-950 px-4 py-2 text-xs font-bold text-slate-300">
-            {workspaces.length} planificados
-          </span>
+          <button onClick={() => syncSunoWorkspace()} disabled={busy || syncCandidates.length === 0} className="w-fit rounded-2xl bg-fuchsia-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">
+            {busy ? 'Procesando...' : `Crear siguiente Álbum/EP en Suno (${syncCandidates.length})`}
+          </button>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {workspaces.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-slate-950 p-5 text-sm text-slate-400">Importa catálogo para crear workspaces lógicos.</div>
-          ) : workspaces.slice(0, 16).map((workspace) => (
-            <div key={workspace.workspace_key} className="rounded-2xl border border-white/10 bg-slate-950 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.25em] text-fuchsia-200/70">Workspace lógico</p>
-                  <h3 className="mt-2 text-lg font-black text-white">{workspace.workspace_name}</h3>
+          ) : workspaces.slice(0, 16).map((workspace) => {
+            const canSync = ['Álbum', 'EP'].includes(workspace.tipo) && workspace.workspace_status !== 'Creado';
+            return (
+              <div key={workspace.workspace_key} className="rounded-2xl border border-white/10 bg-slate-950 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="text-xs uppercase tracking-[0.25em] text-fuchsia-200/70">Workspace</p><h3 className="mt-2 text-lg font-black text-white">{workspace.workspace_name}</h3></div>
+                  <span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold text-slate-300">{workspace.workspace_status}</span>
                 </div>
-                <span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold text-slate-300">{workspace.workspace_status}</span>
+                <p className="mt-3 text-sm text-slate-400">{workspace.artista} · {workspace.tipo}</p>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">Tracks</p><p className="text-lg font-black text-white">{workspace.canciones}</p></div>
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">Pend.</p><p className="text-lg font-black text-yellow-200">{workspace.pendientes}</p></div>
+                  <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">OK</p><p className="text-lg font-black text-emerald-300">{workspace.completadas}</p></div>
+                </div>
+                {workspace.workspace_error && <p className="mt-3 text-xs text-rose-200">{workspace.workspace_error}</p>}
+                {canSync && <button onClick={() => syncSunoWorkspace(workspace.album_id)} disabled={busy} className="mt-4 min-h-10 w-full rounded-xl border border-fuchsia-300/30 bg-fuchsia-300/10 px-4 text-xs font-black text-fuchsia-100 disabled:opacity-50">Crear en Suno</button>}
               </div>
-              <p className="mt-3 text-sm text-slate-400">{workspace.artista} · {workspace.tipo}</p>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">Tracks</p><p className="text-lg font-black text-white">{workspace.canciones}</p></div>
-                <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">Pend.</p><p className="text-lg font-black text-yellow-200">{workspace.pendientes}</p></div>
-                <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-slate-500">OK</p><p className="text-lg font-black text-emerald-300">{workspace.completadas}</p></div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {errorTracks.length > 0 && (
-        <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7">
-          <h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2>
-          <p className="mt-1 text-sm text-rose-100/70">Detalle técnico devuelto por el backend para corregir o reintentar.</p>
-          <div className="mt-5 space-y-3">
-            {errorTracks.slice(0, 6).map((track) => (
-              <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4">
-                <p className="font-bold text-white">{track.artista} · {track.cancion}</p>
-                <p className="mt-2 text-sm text-rose-100/80">{track.error_detalle || 'Sin detalle del error.'}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {errorTracks.length > 0 && <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7"><h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2><div className="mt-5 space-y-3">{errorTracks.slice(0, 6).map((track) => <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4"><p className="font-bold text-white">{track.artista} · {track.cancion}</p><p className="mt-2 text-sm text-rose-100/80">{track.error_detalle || 'Sin detalle del error.'}</p></div>)}</div></div>}
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-black sm:text-2xl">Catálogo musical</h2>
-            <p className="mt-1 text-sm text-slate-400">Vista operativa Artista → Workspace/Proyecto → Track.</p>
-          </div>
-          <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">
-            {['Todos', 'Pendiente', 'Generando', 'Completada', 'Error', 'Reintentar'].map((status) => <option key={status}>{status}</option>)}
-          </select>
-        </div>
-
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
-          <div className="min-w-[1280px]">
-            <div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              <div className="col-span-2">Artista</div>
-              <div className="col-span-3">Workspace</div>
-              <div className="col-span-2">Canción</div>
-              <div className="col-span-2">Prompt</div>
-              <div className="col-span-1">Estado</div>
-              <div className="col-span-1">Audio</div>
-              <div className="col-span-1">Error</div>
-            </div>
-            {filteredTracks.length === 0 ? (
-              <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div>
-            ) : filteredTracks.slice(0, 80).map((track) => (
-              <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200">
-                <div className="col-span-2 font-semibold">{track.artista}</div>
-                <div className="col-span-3 text-slate-300">{track.workspace_name || track.album}</div>
-                <div className="col-span-2 text-slate-300">{track.cancion}</div>
-                <div className="col-span-2 truncate text-slate-500">{track.genero_prompt}</div>
-                <div className="col-span-1"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{track.estado}</span></div>
-                <div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div>
-                <div className="col-span-1 truncate text-rose-200">{track.error_detalle || '—'}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Catálogo musical</h2><p className="mt-1 text-sm text-slate-400">Vista operativa Artista → Workspace/Proyecto → Track.</p></div><select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{['Todos', 'Pendiente', 'Generando', 'Completada', 'Error', 'Reintentar'].map((status) => <option key={status}>{status}</option>)}</select></div>
+        <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10"><div className="min-w-[1280px]"><div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500"><div className="col-span-2">Artista</div><div className="col-span-3">Workspace</div><div className="col-span-2">Canción</div><div className="col-span-2">Prompt</div><div className="col-span-1">Estado</div><div className="col-span-1">Audio</div><div className="col-span-1">Error</div></div>{filteredTracks.length === 0 ? <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div> : filteredTracks.slice(0, 80).map((track) => <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200"><div className="col-span-2 font-semibold">{track.artista}</div><div className="col-span-3 text-slate-300">{track.workspace_name || track.album}</div><div className="col-span-2 text-slate-300">{track.cancion}</div><div className="col-span-2 truncate text-slate-500">{track.genero_prompt}</div><div className="col-span-1"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{track.estado}</span></div><div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div><div className="col-span-1 truncate text-rose-200">{track.error_detalle || '—'}</div></div>)}</div></div>
       </div>
     </div>
   );
