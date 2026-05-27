@@ -68,9 +68,6 @@ export default async function Home() {
               <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
                 Centro de Control Musical
               </h1>
-              <p className="mt-4 max-w-4xl text-sm text-slate-300 sm:text-base lg:text-lg">
-                Cabina central para operar catálogo, créditos, carga masiva, generación musical y descarga de audios desde Render.
-              </p>
             </div>
 
             <div className="flex flex-col gap-3 lg:items-end">
@@ -91,9 +88,6 @@ export default async function Home() {
           <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 p-5 text-rose-100 sm:p-6">
             <h2 className="text-xl font-bold">Alerta del motor</h2>
             <p className="mt-2 text-sm text-rose-100/80">{data.error}</p>
-            <p className="mt-4 text-sm text-rose-100/70">
-              Revisa en Render que SUNO_COOKIE esté configurada y vigente. Sin cookie válida, el tablero vive, pero el motor no canta.
-            </p>
           </div>
         )}
 
