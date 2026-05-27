@@ -19,19 +19,7 @@ const safeName = (value: string) => value
   .replace(/[^a-zA-Z0-9-_ .]/g, '')
   .replace(/\s+/g, ' ')
   .trim()
-  .slice(0, 120) || 'archivo';
-
-const getExtension = (url: string, contentType?: string | null) => {
-  const cleanUrl = url.split('?')[0].toLowerCase();
-  if (cleanUrl.endsWith('.wav')) return 'wav';
-  if (cleanUrl.endsWith('.mp3')) return 'mp3';
-  if (cleanUrl.endsWith('.m4a')) return 'm4a';
-  if (cleanUrl.endsWith('.aac')) return 'aac';
-  if (contentType?.includes('wav')) return 'wav';
-  if (contentType?.includes('mpeg')) return 'mp3';
-  if (contentType?.includes('mp4')) return 'm4a';
-  return 'audio';
-};
+  .slice(0, 120) || 'audio';
 
 const crcTable = (() => {
   const table = new Uint32Array(256);
@@ -50,7 +38,7 @@ const crc32 = (buffer: Buffer) => {
 };
 
 const dosDateTime = (date = new Date()) => {
-  const time = ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | ((Math.floor(date.getSeconds() / 2)) & 0x1f);
+  const time = ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | (Math.floor(date.getSeconds() / 2) & 0x1f);
   const dosDate = (((date.getFullYear() - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f);
   return { time, dosDate };
 };
@@ -78,7 +66,6 @@ const buildZip = (files: Array<{ name: string; data: Buffer }>) => {
     localHeader.writeUInt32LE(data.length, 22);
     localHeader.writeUInt16LE(nameBuffer.length, 26);
     localHeader.writeUInt16LE(0, 28);
-
     localParts.push(localHeader, nameBuffer, data);
 
     const centralHeader = Buffer.alloc(46);
@@ -100,7 +87,6 @@ const buildZip = (files: Array<{ name: string; data: Buffer }>) => {
     centralHeader.writeUInt32LE(0, 38);
     centralHeader.writeUInt32LE(offset, 42);
     centralParts.push(centralHeader, nameBuffer);
-
     offset += localHeader.length + nameBuffer.length + data.length;
   }
 
@@ -115,7 +101,6 @@ const buildZip = (files: Array<{ name: string; data: Buffer }>) => {
   end.writeUInt32LE(centralDir.length, 12);
   end.writeUInt32LE(localData.length, 16);
   end.writeUInt16LE(0, 20);
-
   return Buffer.concat([localData, centralDir, end]);
 };
 
@@ -146,55 +131,25 @@ export async function POST(request: NextRequest) {
     }
 
     const files: Array<{ name: string; data: Buffer }> = [];
-    const metadata: any[] = [];
 
     for (const [index, row] of rows.entries()) {
       const response = await fetch(row.audio_url as string);
-      if (!response.ok) {
-        metadata.push({ track_id: row.cancion_id, titulo: row.cancion, audio_url: row.audio_url, download_error: response.statusText });
-        continue;
-      }
-
+      if (!response.ok) continue;
       const buffer = Buffer.from(await response.arrayBuffer());
-      const ext = getExtension(row.audio_url as string, response.headers.get('content-type'));
       const trackNumber = String(index + 1).padStart(2, '0');
-      const fileName = `audio/${trackNumber} - ${safeName(row.artista)} - ${safeName(row.cancion)}.${ext}`;
+      const fileName = `audio/${trackNumber} - ${safeName(row.artista)} - ${safeName(row.cancion)}.mp3`;
       files.push({ name: fileName, data: buffer });
-
-      metadata.push({
-        track_number: index + 1,
-        track_id: row.cancion_id,
-        titulo: row.cancion,
-        artista: row.artista,
-        proyecto: row.album,
-        tipo: row.tipo,
-        clip_id: row.clip_id,
-        duration: row.duration,
-        source_format: ext,
-        wav_requested: true,
-        wav_note: ext === 'wav' ? 'Archivo WAV descargado.' : 'La API entregó este formato. Si necesitas WAV real, descárgalo desde Suno o habilitamos conversión con FFmpeg en una fase posterior.',
-        audio_file: fileName,
-        audio_url: row.audio_url,
-        audio_final_status: row.audio_final_status,
-        master_status: row.master_status,
-        metadata_status: row.metadata_status,
-        distribution_status: row.distribution_status,
-        genero: row.genre,
-        subgenero: row.subgenre,
-        idioma: row.language,
-        isrc: row.isrc,
-        fecha_lanzamiento: row.release_date,
-        creditos: row.credits,
-        descripcion_corta: row.description_short,
-        descripcion_larga: row.description_long,
-      });
     }
 
-    files.push({ name: 'metadata.json', data: Buffer.from(JSON.stringify({ exported_at: new Date().toISOString(), tracks: metadata }, null, 2), 'utf-8') });
-    files.push({ name: 'README.txt', data: Buffer.from('JATune Production - paquete de audio + metadata\n\nEl sistema prioriza WAV si Suno lo expone por URL. Si los archivos vienen en otro formato, se incluyen en el ZIP sin conversión falsa.\n', 'utf-8') });
+    if (files.length === 0) {
+      return NextResponse.json(
+        { ok: false, code: 'NO_AUDIO_DOWNLOADED', message: 'No se pudo descargar ningún audio desde las URLs disponibles.' },
+        { status: 502, headers: getCorsHeaders(request) }
+      );
+    }
 
     const zip = buildZip(files);
-    const projectName = rows[0]?.album ? safeName(rows[0].album) : 'jatune-package';
+    const projectName = rows[0]?.album ? safeName(rows[0].album) : 'jatune-audios';
     const corsHeaders = getCorsHeaders(request);
 
     return new NextResponse(zip, {
@@ -202,7 +157,7 @@ export async function POST(request: NextRequest) {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${projectName}-audio-metadata.zip"`,
+        'Content-Disposition': `attachment; filename="${projectName}-audios-mp3.zip"`,
       },
     });
   } catch (error: any) {
