@@ -50,77 +50,122 @@ export default async function Home() {
   const limit = data.limit || {};
   const usagePercent = getUsagePercent(limit.monthly_usage, limit.monthly_limit);
   const statusLabel = data.ok ? 'Operativo' : 'Requiere atención';
-  const statusClass = data.ok ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200';
   const checkedAt = new Date().toLocaleString('es-DO', {
     dateStyle: 'medium',
     timeStyle: 'short'
   });
 
+  const usageCards = [
+    {
+      label: 'Créditos disponibles',
+      value: formatNumber(limit.credits_left),
+      caption: 'Balance activo en Suno',
+      accent: 'text-emerald-300'
+    },
+    {
+      label: 'Uso mensual',
+      value: formatNumber(limit.monthly_usage),
+      caption: 'Créditos consumidos',
+      accent: 'text-sky-300'
+    },
+    {
+      label: 'Límite mensual',
+      value: formatNumber(limit.monthly_limit),
+      caption: `Periodo: ${limit.period || 'N/D'}`,
+      accent: 'text-violet-300'
+    },
+  ];
+
   return (
-    <section className="min-h-screen w-full bg-slate-950 px-3 py-5 text-white sm:px-5 lg:px-8 2xl:px-10 lg:py-8">
-      <div className="mx-auto flex w-full max-w-[1760px] flex-col gap-5 sm:gap-6 lg:gap-7">
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-5 shadow-2xl sm:p-7 lg:p-9">
-          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <p className="mb-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-yellow-200">
+    <main className="min-h-screen w-full overflow-x-hidden bg-[#030712] text-white">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(250,204,21,0.14),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.16),transparent_28%),linear-gradient(180deg,#020617_0%,#0f172a_45%,#020617_100%)]" />
+
+      <section className="mx-auto flex w-full max-w-[1840px] flex-col gap-6 px-3 py-4 sm:px-5 lg:px-8 2xl:px-10 lg:py-8">
+        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl backdrop-blur sm:p-7 lg:p-9">
+            <div className="absolute right-0 top-0 h-52 w-52 translate-x-16 -translate-y-16 rounded-full bg-yellow-300/10 blur-3xl" />
+            <div className="relative">
+              <p className="inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.35em] text-yellow-200">
                 JATune Production
               </p>
-              <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-                Centro de Control Musical
+              <h1 className="mt-5 max-w-5xl text-3xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl xl:text-7xl">
+                Centro Ejecutivo de Producción Musical
               </h1>
-            </div>
+              <p className="mt-5 max-w-4xl text-sm leading-7 text-slate-300 sm:text-base lg:text-lg">
+                Opera catálogo, tandas de generación, extracción de audios, aprobación final y descarga por proyecto desde una cabina central en Render.
+              </p>
 
-            <div className="flex flex-col gap-3 lg:items-end">
-              <div className={`w-fit rounded-2xl border px-5 py-4 text-sm font-bold ${statusClass}`}>
-                <span className="block text-xs uppercase tracking-[0.25em] opacity-80">Motor</span>
-                {statusLabel}
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-slate-300 lg:justify-end">
-                <span className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-2">Render: Online</span>
-                <span className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-2">Cookie: {data.ok ? 'Vigente' : 'Validar'}</span>
-                <span className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-2">Actualizado: {checkedAt}</span>
+              <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {['Importar catálogo', 'Generar 5 pendientes', 'Aprobar audios', 'Descargar ZIP'].map((step, index) => (
+                  <div key={step} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Paso {index + 1}</p>
+                    <p className="mt-2 text-sm font-bold text-slate-100">{step}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
+
+          <aside className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur sm:p-6 lg:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">Estado operativo</p>
+                <h2 className="mt-3 text-3xl font-black text-white">{statusLabel}</h2>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${data.ok ? 'bg-emerald-300/15 text-emerald-200 ring-1 ring-emerald-300/30' : 'bg-rose-300/15 text-rose-200 ring-1 ring-rose-300/30'}`}>
+                {data.ok ? 'Online' : 'Validar'}
+              </span>
+            </div>
+
+            <div className="mt-6 space-y-3 text-sm text-slate-300">
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+                <span>Render</span>
+                <strong className="text-emerald-300">Activo</strong>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+                <span>Cookie Suno</span>
+                <strong className={data.ok ? 'text-emerald-300' : 'text-rose-300'}>{data.ok ? 'Vigente' : 'Revisar'}</strong>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+                <span className="block text-slate-500">Última lectura</span>
+                <strong className="mt-1 block text-slate-100">{checkedAt}</strong>
+              </div>
+            </div>
+          </aside>
         </div>
 
         {!data.ok && (
-          <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 p-5 text-rose-100 sm:p-6">
+          <div className="rounded-3xl border border-rose-400/30 bg-rose-500/10 p-5 text-rose-100 shadow-xl sm:p-6">
             <h2 className="text-xl font-bold">Alerta del motor</h2>
             <p className="mt-2 text-sm text-rose-100/80">{data.error}</p>
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
-            <p className="text-sm font-medium text-slate-400">Créditos disponibles</p>
-            <p className="mt-3 text-3xl font-black text-emerald-300 sm:text-4xl">{formatNumber(limit.credits_left)}</p>
-            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Suno balance</p>
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {usageCards.map((card) => (
+            <div key={card.label} className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-xl backdrop-blur sm:p-6">
+              <p className="text-sm font-medium text-slate-400">{card.label}</p>
+              <p className={`mt-3 text-3xl font-black sm:text-4xl ${card.accent}`}>{card.value}</p>
+              <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">{card.caption}</p>
+            </div>
+          ))}
 
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
-            <p className="text-sm font-medium text-slate-400">Uso mensual</p>
-            <p className="mt-3 text-3xl font-black text-sky-300 sm:text-4xl">{formatNumber(limit.monthly_usage)}</p>
-            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Créditos consumidos</p>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
-            <p className="text-sm font-medium text-slate-400">Límite mensual</p>
-            <p className="mt-3 text-3xl font-black text-violet-300 sm:text-4xl">{formatNumber(limit.monthly_limit)}</p>
-            <p className="mt-3 text-xs uppercase tracking-[0.25em] text-slate-500">Periodo: {limit.period || 'N/D'}</p>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl sm:p-6">
-            <p className="text-sm font-medium text-slate-400">Consumo</p>
-            <p className="mt-3 text-3xl font-black text-yellow-200 sm:text-4xl">{formatPercent(limit.monthly_usage, limit.monthly_limit)}</p>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
-              <div className="h-full rounded-full bg-yellow-300" style={{ width: `${usagePercent}%` }} />
+          <div className="rounded-3xl border border-yellow-300/20 bg-yellow-300/[0.06] p-5 shadow-xl backdrop-blur sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-yellow-100/80">Consumo</p>
+                <p className="mt-3 text-3xl font-black text-yellow-200 sm:text-4xl">{formatPercent(limit.monthly_usage, limit.monthly_limit)}</p>
+              </div>
+              <span className="rounded-full border border-yellow-300/20 bg-slate-950/50 px-3 py-1 text-xs font-bold text-yellow-100">Mes</span>
+            </div>
+            <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-950/80">
+              <div className="h-full rounded-full bg-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" style={{ width: `${usagePercent}%` }} />
             </div>
           </div>
         </div>
 
         <JatuneControlPanel initialSummary={summary} initialTracks={tracks} />
-      </div>
-    </section>
+      </section>
+    </main>
   );
 }
