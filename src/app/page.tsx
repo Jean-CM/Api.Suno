@@ -63,19 +63,19 @@ export default async function Home() {
           <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
               <p className="mb-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-yellow-200">
-                JATune Production
+                JATune StudioCore
               </p>
               <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-                Centro Ejecutivo de Producción Musical
+                La cabina inteligente para producir música en masa
               </h1>
               <p className="mt-4 max-w-4xl text-sm text-slate-300 sm:text-base lg:text-lg">
-                Plataforma central para importar catálogo, generar tandas musicales con Suno, aprobar audios finales y descargar paquetes por álbum, EP o sencillo con metadata lista para operación.
+                Importa tus ideas, dispara tandas de audio con Suno, extrae resultados y descarga proyectos completos en ZIP por álbum, EP o sencillo. Menos fricción, más música lista para mover el mundo.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 lg:items-end">
               <div className={`w-fit rounded-2xl border px-5 py-4 text-sm font-bold ${statusClass}`}>
-                <span className="block text-xs uppercase tracking-[0.25em] opacity-80">Estado</span>
+                <span className="block text-xs uppercase tracking-[0.25em] opacity-80">Motor</span>
                 {statusLabel}
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-slate-300 lg:justify-end">
