@@ -143,12 +143,37 @@ export const unauthorizedResponse = (req?: Request | NextRequest) => {
   );
 };
 
+const isSameOriginDashboardRequest = (req: NextRequest) => {
+  const bypassEnabled = process.env.JATUNE_DASHBOARD_NO_KEY !== 'false';
+  if (!bypassEnabled) return false;
+
+  const secFetchSite = req.headers.get('sec-fetch-site');
+  if (secFetchSite === 'same-origin') return true;
+
+  const referer = req.headers.get('referer');
+  const host = req.headers.get('host');
+  if (referer && host) {
+    try {
+      return new URL(referer).host === host;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+};
+
 export const requireApiKey = (req: NextRequest): NextResponse | null => {
   const configuredKey = process.env.JATUNE_API_KEY;
 
   // Backward compatible: if no key is configured, keep the API open.
-  // For production, always set JATUNE_API_KEY in Render.
   if (!configuredKey) {
+    return null;
+  }
+
+  // The dashboard runs on the same Render origin, so it should not require the user
+  // to paste the key manually. External API calls still need x-api-key.
+  if (isSameOriginDashboardRequest(req)) {
     return null;
   }
 
