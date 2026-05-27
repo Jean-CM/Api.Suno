@@ -90,8 +90,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    // Suno suele entregar 2 audios por canción. 5 pendientes = hasta 10 audios, controlado y estable.
-    const limit = Math.max(1, Math.min(Number(body?.limit || 5), 5));
+    const limit = Math.max(1, Math.min(Number(body?.limit || 10), 10));
     const waitAudio = Boolean(body?.wait_audio ?? false);
     const makeInstrumental = Boolean(body?.make_instrumental ?? false);
 
