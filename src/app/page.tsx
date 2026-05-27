@@ -63,13 +63,13 @@ export default async function Home() {
           <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
               <p className="mb-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-300/10 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-yellow-200">
-                JATune VibeLab
+                JATune Production
               </p>
               <h1 className="max-w-5xl text-3xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-                De idea a audio. Rápido, limpio y en lote.
+                Centro de Control Musical
               </h1>
               <p className="mt-4 max-w-4xl text-sm text-slate-300 sm:text-base lg:text-lg">
-                Carga tus ideas, lanza tandas con Suno, extrae los resultados y descarga proyectos completos en ZIP por álbum, EP o sencillo. Una cabina ágil para convertir intención en música.
+                Cabina central para operar catálogo, créditos, carga masiva, generación musical y descarga de audios desde Render.
               </p>
             </div>
 
