@@ -78,13 +78,18 @@ function buildHeaders(apiKey?: string): HeadersInit {
 }
 
 async function apiRequest(path: string, options: ApiOptions = {}) {
-  const response = await fetch(path, {
-    method: options.method || 'GET',
-    headers: buildHeaders(options.apiKey),
-    body: options.body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: options.method || 'GET',
+      headers: buildHeaders(options.apiKey),
+      body: options.body,
+    });
+  } catch (error: any) {
+    throw new Error(error?.message === 'Load failed' ? 'La conexión se cortó mientras el servidor procesaba. Intenta nuevamente o reduce la tanda.' : error?.message || 'No fue posible conectar con el servidor.');
+  }
 
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message || data?.code || 'Solicitud fallida');
   return data;
 }
@@ -181,12 +186,31 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const generatePending = async () => {
     if (!requireKey()) return;
     setBusy(true);
-    setMessage('');
+    setMessage('Iniciando tanda estable: 5 audios en solicitudes pequeñas...');
     saveKeyPreference(apiKey, rememberKey);
+
+    let processed = 0;
+    let failed = 0;
+
     try {
-      const data = await apiRequest('/api/catalog/generate-pending', { method: 'POST', apiKey, body: JSON.stringify({ limit: 5, wait_audio: false, make_instrumental: false }) });
-      const failed = (data.results || []).filter((item: { ok: boolean }) => !item.ok);
-      setMessage(failed.length ? `Algunos audios fallaron: ${failed.length}. Revisa errores recientes.` : `Tanda enviada: ${data.processed} canciones. Ahora extrae los audios cuando Suno termine.`);
+      for (let i = 1; i <= 5; i += 1) {
+        setMessage(`Generando audio ${i}/5...`);
+        try {
+          const data = await apiRequest('/api/catalog/generate-pending', {
+            method: 'POST',
+            apiKey,
+            body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
+          });
+          processed += Number(data.processed || 0);
+          const hasError = (data.results || []).some((item: { ok: boolean }) => !item.ok);
+          if (hasError) failed += 1;
+          await refreshCatalog().catch(() => undefined);
+        } catch {
+          failed += 1;
+        }
+      }
+
+      setMessage(failed > 0 ? `Tanda terminada: ${processed} enviada(s), ${failed} con error. Revisa errores recientes.` : `Tanda enviada: ${processed} canción(es). Ahora extrae los audios cuando Suno termine.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
@@ -318,7 +342,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         </div>
 
         <div className="rounded-3xl border border-emerald-300/20 bg-emerald-300/[0.05] p-5 shadow-xl lg:p-7">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Producción musical</h2><p className="mt-1 text-sm text-slate-400">Crea tandas de 5 canciones y extrae los audios cuando Suno finalice.</p></div><button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar audios'}</button></div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Producción musical</h2><p className="mt-1 text-sm text-slate-400">Crea tandas estables de 5 canciones, una solicitud a la vez, y extrae los audios cuando Suno finalice.</p></div><button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar audios'}</button></div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Pend.', summary.pendientes, 'text-yellow-200'], ['Gen.', summary.generando, 'text-sky-300'], ['OK', summary.completadas, 'text-emerald-300'], ['Error', summary.errores, 'text-rose-300']].map(([label, value, colorClass]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-slate-900 p-4"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p><p className={`mt-2 text-2xl font-black ${colorClass}`}>{value}</p></div>)}</div>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap"><button onClick={refreshGenerated} disabled={busy || refreshCandidates.length === 0} className="min-h-11 rounded-2xl border border-sky-300/30 bg-sky-300/10 px-5 text-sm font-black text-sky-100 disabled:opacity-50">Extraer audios desde Suno ({refreshCandidates.length})</button>{errorTracks.length > 0 && <button onClick={retryErrors} disabled={busy} className="min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">Reintentar errores ({errorTracks.length})</button>}</div>
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
