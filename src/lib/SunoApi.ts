@@ -292,7 +292,7 @@ class SunoApi {
     return context;
   }
 
-  private async findSunoPromptBox(page: Page): Promise<Locator> {
+  private async findSunoPromptBox(page: Page): Promise<Locator | null> {
     const candidates = [
       page.locator('.custom-textarea').first(),
       page.locator('textarea').first(),
@@ -309,7 +309,7 @@ class SunoApi {
       try {
         await candidate.waitFor({
           state: 'visible',
-          timeout: 5000,
+          timeout: 3000,
         });
 
         return candidate;
@@ -318,9 +318,57 @@ class SunoApi {
       }
     }
 
-    throw new Error(
-      'No se encontró el campo Song Description de Suno. Revisa si hay popup, login, validación manual o cookie vencida.'
-    );
+    return null;
+  }
+
+  private async typeInSunoPromptBox(page: Page): Promise<void> {
+    const textarea = await this.findSunoPromptBox(page);
+
+    if (textarea) {
+      await this.click(textarea);
+      await textarea.pressSequentially('Lorem ipsum', {
+        delay: 80,
+      });
+      return;
+    }
+
+    logger.warn('Prompt box selector not found. Trying visual fallback using Song Description label.');
+
+    const label = page.getByText('Song Description', {
+      exact: false,
+    }).first();
+
+    try {
+      await label.waitFor({
+        state: 'visible',
+        timeout: 15000,
+      });
+
+      const box = await label.boundingBox();
+
+      if (!box) {
+        throw new Error('Song Description label has no bounding box.');
+      }
+
+      await page.mouse.click(box.x + 20, box.y + 45);
+
+      await page.keyboard.type('Lorem ipsum', {
+        delay: 80,
+      });
+    } catch (error: any) {
+      await page
+        .screenshot({
+          path: '/tmp/suno-create-error.png',
+          fullPage: true,
+        })
+        .catch(() => undefined);
+
+      throw new Error(
+        `No se pudo escribir en Song Description. Posible popup, login, validación manual o cookie vencida. Detalle: ${
+          error?.message || 'sin detalle'
+        }`
+      );
+    }
   }
 
   private async findSunoCreateButton(page: Page): Promise<Locator> {
@@ -367,17 +415,21 @@ class SunoApi {
 
     logger.info('Waiting for Suno interface to load');
 
-    await page.waitForLoadState('domcontentloaded', {
-      timeout: 60000,
-    }).catch(() => {
-      logger.warn('Suno domcontentloaded timeout; continuing.');
-    });
+    await page
+      .waitForLoadState('domcontentloaded', {
+        timeout: 60000,
+      })
+      .catch(() => {
+        logger.warn('Suno domcontentloaded timeout; continuing.');
+      });
 
-    await page.waitForResponse('**/api/project/**\\?**', {
-      timeout: 10000,
-    }).catch(() => {
-      logger.warn('Suno project API did not fire; continuing with captcha trigger.');
-    });
+    await page
+      .waitForResponse('**/api/project/**\\?**', {
+        timeout: 10000,
+      })
+      .catch(() => {
+        logger.warn('Suno project API did not fire; continuing with captcha trigger.');
+      });
 
     if (this.ghostCursorEnabled) {
       this.cursor = await createCursor(page);
@@ -393,11 +445,7 @@ class SunoApi {
       // No popup.
     }
 
-    const textarea = await this.findSunoPromptBox(page);
-    await this.click(textarea);
-    await textarea.pressSequentially('Lorem ipsum', {
-      delay: 80,
-    });
+    await this.typeInSunoPromptBox(page);
 
     const button = await this.findSunoCreateButton(page);
     await this.click(button);
@@ -798,7 +846,9 @@ class SunoApi {
   public async getLyricAlignment(song_id: string): Promise<object> {
     await this.keepAlive(false);
 
-    const response = await this.client.get(`${SunoApi.BASE_URL}/api/gen/${song_id}/aligned_lyrics/v2/`);
+    const response = await this.client.get(
+      `${SunoApi.BASE_URL}/api/gen/${song_id}/aligned_lyrics/v2/`
+    );
 
     return response.data?.aligned_words.map((transcribedWord: any) => ({
       word: transcribedWord.word,
