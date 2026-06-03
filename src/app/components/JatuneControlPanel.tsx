@@ -62,6 +62,15 @@ type DistributionPackage = {
   audio_links: Array<{ type: string; preferred_format: string; track_id: number; title: string; url: string }>;
 };
 
+type MasterPreset = {
+  key: string;
+  name: string;
+  description: string;
+  loudnessTarget: string;
+  truePeak: string;
+  bitrate: string;
+};
+
 const sampleCatalog = `Zyphorix | Galactic Vibe | EP | Nebula Dance | Dembow Dominicano, Bajo Pesado, 120 BPM
 Zyphorix | Galactic Vibe | EP | Solar Flare | Spatial Trap, Sintetizadores Futuristas
 Jeantune | Amor Digital | Álbum | Besos en la Nube | Pop Urbano Romántico, Synth Latino, 95 BPM
@@ -110,6 +119,15 @@ const sunoStatusLabel = (track: Track) => {
   return track.estado;
 };
 
+const cleanError = (value?: string) => {
+  if (!value) return 'Sin detalle del error.';
+  if (value.includes('<launching>') || value.includes('chromium_headless_shell')) {
+    return 'Render/Railway no pudo abrir Chromium a tiempo para validar Suno. Reintenta más tarde o valida la sesión/cookie.';
+  }
+  if (value.length > 360) return `${value.slice(0, 360)}...`;
+  return value;
+};
+
 export default function JatuneControlPanel({ initialSummary, initialTracks }: Props) {
   const [summary, setSummary] = useState<Summary>(initialSummary);
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
@@ -124,12 +142,15 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const [exportType, setExportType] = useState('Todos');
   const [exportAlbumId, setExportAlbumId] = useState('');
   const [distributionPackage, setDistributionPackage] = useState<DistributionPackage | null>(null);
+  const [masterPreset, setMasterPreset] = useState('streaming_ready');
+  const [masterPresets, setMasterPresets] = useState<MasterPreset[]>([]);
 
   const filteredTracks = filter === 'Todos' ? tracks : tracks.filter((track) => track.estado === filter);
   const errorTracks = tracks.filter((track) => track.estado === 'Error');
   const refreshCandidates = tracks.filter((track) => track.clip_id && (track.estado === 'Generando' || !track.audio_url));
   const exportProjects = useMemo(() => workspaces.filter((workspace) => exportType === 'Todos' || workspace.tipo === exportType), [workspaces, exportType]);
   const selectedProjectName = exportAlbumId ? exportProjects.find((workspace) => String(workspace.album_id) === exportAlbumId)?.album || 'proyecto' : 'catalogo';
+  const audioReadyCount = tracks.filter((track) => Boolean(track.audio_url)).length;
 
   const saveKeyPreference = (key: string, remember: boolean) => {
     if (remember && key.trim()) window.localStorage.setItem(STORAGE_KEY, key.trim());
@@ -155,11 +176,21 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     setWorkspaces((workspaceData.workspaces || []) as Workspace[]);
   };
 
+  const loadMasterPresets = async (key?: string) => {
+    try {
+      const data = await apiRequest('/api/studio/presets', { apiKey: key || apiKey });
+      setMasterPresets((data.presets || []) as MasterPreset[]);
+    } catch {
+      setMasterPresets([]);
+    }
+  };
+
   useEffect(() => {
     const savedKey = window.localStorage.getItem(STORAGE_KEY);
     if (savedKey) {
       setApiKey(savedKey);
       setRememberKey(true);
+      loadMasterPresets(savedKey).catch(() => undefined);
     } else {
       setShowKeyModal(true);
     }
@@ -175,6 +206,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       const data = await apiRequest('/api/catalog/import', { method: 'POST', apiKey, body: JSON.stringify({ text: bulkText }) });
       setMessage(`Catálogo preparado: ${data.imported} registros listos para crear audio.`);
       await refreshCatalog();
+      await loadMasterPresets();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
       setMessage(`Error: ${detail}. Revisa JATUNE_API_KEY.`);
@@ -186,31 +218,17 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const generatePending = async () => {
     if (!requireKey()) return;
     setBusy(true);
-    setMessage('Iniciando tanda estable: 5 audios en solicitudes pequeñas...');
+    setMessage('Generando audio 1/1...');
     saveKeyPreference(apiKey, rememberKey);
 
-    let processed = 0;
-    let failed = 0;
-
     try {
-      for (let i = 1; i <= 5; i += 1) {
-        setMessage(`Generando audio ${i}/5...`);
-        try {
-          const data = await apiRequest('/api/catalog/generate-pending', {
-            method: 'POST',
-            apiKey,
-            body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
-          });
-          processed += Number(data.processed || 0);
-          const hasError = (data.results || []).some((item: { ok: boolean }) => !item.ok);
-          if (hasError) failed += 1;
-          await refreshCatalog().catch(() => undefined);
-        } catch {
-          failed += 1;
-        }
-      }
-
-      setMessage(failed > 0 ? `Tanda terminada: ${processed} enviada(s), ${failed} con error. Revisa errores recientes.` : `Tanda enviada: ${processed} canción(es). Ahora extrae los audios cuando Suno termine.`);
+      const data = await apiRequest('/api/catalog/generate-pending', {
+        method: 'POST',
+        apiKey,
+        body: JSON.stringify({ limit: 1, wait_audio: false, make_instrumental: false }),
+      });
+      const hasError = (data.results || []).some((item: { ok: boolean }) => !item.ok);
+      setMessage(hasError ? 'La solicitud terminó con error. Revisa errores recientes.' : `Solicitud enviada: ${data.processed || 0} canción. Ahora extrae los audios cuando Suno termine.`);
       await refreshCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
@@ -306,6 +324,38 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     }
   };
 
+  const downloadMasteredZip = async () => {
+    if (!requireKey()) return;
+    setBusy(true);
+    setMessage('JATune Studio está masterizando. Esto puede tardar según la cantidad de audios...');
+    saveKeyPreference(apiKey, rememberKey);
+    try {
+      const payload: Record<string, string | number> = { preset: masterPreset };
+      if (exportType !== 'Todos') payload.tipo = exportType;
+      if (exportAlbumId) payload.album_id = Number(exportAlbumId);
+      const response = await fetch('/api/studio/download-mastered-package', { method: 'POST', headers: buildHeaders(apiKey), body: JSON.stringify(payload) });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.message || 'No fue posible masterizar el ZIP.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedProjectName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'jatune'}-mastered-${masterPreset}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMessage('ZIP masterizado descargado. Revisa la carpeta mastered y el manifiesto de metadata.');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Error desconocido';
+      setMessage(`Error en JATune Studio: ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const metricCards: Array<[string, number, string]> = [
     ['Artistas', summary.artistas, 'text-yellow-200'],
     ['Proyectos', summary.workspaces ?? summary.albumes, 'text-fuchsia-300'],
@@ -321,10 +371,10 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <div className="w-full max-w-xl rounded-3xl border border-yellow-300/20 bg-slate-950 p-6 shadow-2xl">
             <p className="text-xs font-black uppercase tracking-[0.3em] text-yellow-200">Acceso operativo</p>
             <h2 className="mt-3 text-3xl font-black text-white">Conectar StudioCore</h2>
-            <p className="mt-3 text-sm text-slate-300">Pega tu clave <strong>JATUNE_API_KEY</strong> para crear tandas, extraer audios y descargar proyectos.</p>
+            <p className="mt-3 text-sm text-slate-300">Pega tu clave <strong>JATUNE_API_KEY</strong> para crear tandas, extraer audios, masterizar y descargar proyectos.</p>
             <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="JATUNE_API_KEY" className="mt-5 min-h-12 w-full rounded-2xl border border-white/10 bg-slate-900 px-4 text-sm text-slate-100 outline-none ring-yellow-300/20 focus:ring-4" type="password" autoFocus />
             <label className="mt-3 flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={rememberKey} onChange={(event) => setRememberKey(event.target.checked)} />Recordar en este navegador</label>
-            <div className="mt-5 flex gap-3"><button onClick={() => { saveKeyPreference(apiKey, rememberKey); setShowKeyModal(false); }} className="rounded-2xl bg-yellow-300 px-5 py-3 text-sm font-black text-slate-950">Entrar al sistema</button><button onClick={() => setShowKeyModal(false)} className="rounded-2xl border border-white/10 bg-slate-900 px-5 py-3 text-sm font-black text-slate-100">Ahora no</button></div>
+            <div className="mt-5 flex gap-3"><button onClick={() => { saveKeyPreference(apiKey, rememberKey); setShowKeyModal(false); loadMasterPresets(apiKey); }} className="rounded-2xl bg-yellow-300 px-5 py-3 text-sm font-black text-slate-950">Entrar al sistema</button><button onClick={() => setShowKeyModal(false)} className="rounded-2xl border border-white/10 bg-slate-900 px-5 py-3 text-sm font-black text-slate-100">Ahora no</button></div>
           </div>
         </div>
       )}
@@ -342,7 +392,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
         </div>
 
         <div className="rounded-3xl border border-emerald-300/20 bg-emerald-300/[0.05] p-5 shadow-xl lg:p-7">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Producción musical</h2><p className="mt-1 text-sm text-slate-400">Crea tandas estables de 5 canciones, una solicitud a la vez, y extrae los audios cuando Suno finalice.</p></div><button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar audios'}</button></div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Producción musical</h2><p className="mt-1 text-sm text-slate-400">Crea una canción por intento para mantener estable la conexión con Suno.</p></div><button onClick={generatePending} disabled={busy || summary.pendientes === 0} className="min-h-12 rounded-2xl bg-emerald-300 px-6 font-black text-slate-950 disabled:opacity-50">{busy ? 'Procesando...' : 'Generar audio'}</button></div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Pend.', summary.pendientes, 'text-yellow-200'], ['Gen.', summary.generando, 'text-sky-300'], ['OK', summary.completadas, 'text-emerald-300'], ['Error', summary.errores, 'text-rose-300']].map(([label, value, colorClass]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-slate-900 p-4"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p><p className={`mt-2 text-2xl font-black ${colorClass}`}>{value}</p></div>)}</div>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap"><button onClick={refreshGenerated} disabled={busy || refreshCandidates.length === 0} className="min-h-11 rounded-2xl border border-sky-300/30 bg-sky-300/10 px-5 text-sm font-black text-sky-100 disabled:opacity-50">Extraer audios desde Suno ({refreshCandidates.length})</button>{errorTracks.length > 0 && <button onClick={retryErrors} disabled={busy} className="min-h-11 rounded-2xl border border-rose-300/20 bg-rose-300/10 px-5 text-sm font-black text-rose-100 disabled:opacity-50">Reintentar errores ({errorTracks.length})</button>}</div>
           {message && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-4 text-sm text-slate-200">{message}</div>}
@@ -353,7 +403,29 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
 
       <div className="rounded-3xl border border-amber-300/20 bg-amber-300/[0.06] p-5 shadow-xl lg:p-7"><div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Descargar audios MP3</h2><p className="mt-1 text-sm text-slate-400">Elige un álbum, EP o sencillo y descarga un ZIP solo con los audios.</p></div><div className="grid gap-3 sm:grid-cols-3 lg:min-w-[760px]"><select value={exportType} onChange={(event) => { setExportType(event.target.value); setExportAlbumId(''); }} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{['Todos', 'Álbum', 'EP', 'Sencillo'].map((item) => <option key={item}>{item}</option>)}</select><select value={exportAlbumId} onChange={(event) => setExportAlbumId(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100"><option value="">Todos los proyectos</option>{exportProjects.map((workspace) => <option key={workspace.album_id} value={workspace.album_id}>{workspace.album} · {workspace.artista}</option>)}</select><button onClick={exportDistribution} disabled={busy} className="rounded-2xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">Ver audios</button></div></div>{distributionPackage && <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950 p-5"><div className="grid gap-3 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Canciones</p><p className="text-2xl font-black text-white">{distributionPackage.summary.tracks}</p></div><div><p className="text-xs text-slate-500">Audios disponibles</p><p className="text-2xl font-black text-amber-200">{distributionPackage.summary.audio_assets}</p></div></div><div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap"><button onClick={downloadAudioZip} disabled={busy} className="min-h-11 rounded-2xl bg-amber-300 px-5 text-sm font-black text-slate-950 disabled:opacity-50">Descargar ZIP MP3</button></div></div>}</div>
 
-      {errorTracks.length > 0 && <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7"><h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2><div className="mt-5 space-y-3">{errorTracks.slice(0, 6).map((track) => <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4"><p className="font-bold text-white">{track.artista} · {track.cancion}</p><p className="mt-2 text-sm text-rose-100/80">{track.error_detalle || 'Sin detalle del error.'}</p></div>)}</div></div>}
+      <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.06] p-5 shadow-xl lg:p-7">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-cyan-200/80">JATune Studio</p>
+            <h2 className="mt-2 text-xl font-black sm:text-2xl">Masterización FFmpeg</h2>
+            <p className="mt-1 text-sm text-slate-400">Procesa los audios generados en Railway y descarga un ZIP masterizado en MP3 320 kbps. Tu PC no instala nada.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+            <select value={masterPreset} onChange={(event) => setMasterPreset(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">
+              {(masterPresets.length ? masterPresets : [{ key: 'streaming_ready', name: 'Streaming Ready', description: '', loudnessTarget: '-14 LUFS', truePeak: '-1.5 dB', bitrate: '320k' }]).map((preset) => <option key={preset.key} value={preset.key}>{preset.name}</option>)}
+            </select>
+            <button onClick={downloadMasteredZip} disabled={busy || audioReadyCount === 0} className="rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">Masterizar y descargar ZIP</button>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Audios listos</p><p className="mt-2 text-3xl font-black text-cyan-200">{audioReadyCount}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Preset</p><p className="mt-2 text-lg font-black text-white">{masterPresets.find((preset) => preset.key === masterPreset)?.name || 'Streaming Ready'}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Salida</p><p className="mt-2 text-lg font-black text-white">MP3 320 kbps · ZIP</p></div>
+        </div>
+        {masterPresets.find((preset) => preset.key === masterPreset) && <p className="mt-4 text-sm text-slate-400">{masterPresets.find((preset) => preset.key === masterPreset)?.description}</p>}
+      </div>
+
+      {errorTracks.length > 0 && <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7"><h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2><div className="mt-5 space-y-3">{errorTracks.slice(0, 6).map((track) => <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4"><p className="font-bold text-white">{track.artista} · {track.cancion}</p><p className="mt-2 text-sm text-rose-100/80">{cleanError(track.error_detalle)}</p></div>)}</div></div>}
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl lg:p-7"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-black sm:text-2xl">Catálogo musical</h2><p className="mt-1 text-sm text-slate-400">Vista operativa Artista → Proyecto → Track.</p></div><select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{['Todos', 'Pendiente', 'Generando', 'Completada', 'Error', 'Reintentar'].map((status) => <option key={status}>{status}</option>)}</select></div><div className="mt-6 overflow-x-auto rounded-2xl border border-white/10"><div className="min-w-[1320px]"><div className="grid grid-cols-12 bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-500"><div className="col-span-2">Artista</div><div className="col-span-2">Proyecto</div><div className="col-span-2">Canción</div><div className="col-span-2">Estado Suno</div><div className="col-span-1">Duración</div><div className="col-span-1">Audio</div><div className="col-span-2">Prompt</div></div>{filteredTracks.length === 0 ? <div className="p-6 text-sm text-slate-400">No hay canciones para mostrar.</div> : filteredTracks.slice(0, 80).map((track) => <div key={track.cancion_id} className="grid grid-cols-12 border-t border-white/10 px-4 py-4 text-sm text-slate-200"><div className="col-span-2 font-semibold">{track.artista}</div><div className="col-span-2 truncate text-slate-300">{track.workspace_name || track.album}</div><div className="col-span-2 text-slate-300">{track.cancion}</div><div className="col-span-2"><span className="rounded-full border border-white/10 bg-slate-900 px-3 py-1 text-xs font-bold">{sunoStatusLabel(track)}</span></div><div className="col-span-1 text-slate-300">{formatDuration(track.duration)}</div><div className="col-span-1">{track.audio_url ? <a className="text-yellow-200 underline" href={track.audio_url} target="_blank">Abrir</a> : <span className="text-slate-600">—</span>}</div><div className="col-span-2 truncate text-slate-500">{track.genero_prompt}</div></div>)}</div></div></div>
     </div>
