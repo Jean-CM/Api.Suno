@@ -6,6 +6,10 @@ import { getCorsHeaders, requireApiKey } from '@/lib/utils';
 export const dynamic = 'force-dynamic';
 
 const SELECTION_POLICY = 'smallest_file_then_shortest_duration';
+const DEFAULT_BATCH_LIMIT = Number(process.env.JATUNE_AUTO_GENERATE_LIMIT || 10);
+const DEFAULT_DELAY_MS = Number(process.env.JATUNE_AUTO_GENERATE_DELAY_MS || 55000);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getClipDuration = (clip: any): number | null => {
   const candidates = [
@@ -84,20 +88,44 @@ const selectBestClip = (response: any) => {
   return candidates[0];
 };
 
+const normalizeGenerationError = (error: any) => {
+  const message = error?.message || 'Error generando canción.';
+
+  if (message.includes('No hCaptcha request occurred')) {
+    return 'Suno no disparó la validación hCaptcha en 1 minuto. Se detuvo la tanda para evitar más errores. Valida la sesión en Suno y vuelve a intentar.';
+  }
+
+  if (message.includes('token_validation_failed') || message.includes("couldn't verify your request")) {
+    return 'Suno rechazó la validación de la sesión. Actualiza SUNO_COOKIE o valida manualmente la cuenta en Suno.';
+  }
+
+  if (message.includes('chromium_headless_shell') || message.includes('<launching>')) {
+    return 'El navegador interno tardó demasiado abriendo Suno. Se detuvo la tanda para proteger el servidor.';
+  }
+
+  return message.length > 600 ? `${message.slice(0, 600)}...` : message;
+};
+
+const shouldStopBatch = (message: string) => {
+  return message.includes('hCaptcha') || message.includes('validación') || message.includes('SUNO_COOKIE') || message.includes('navegador interno');
+};
+
 export async function POST(request: NextRequest) {
   const unauthorized = requireApiKey(request);
   if (unauthorized) return unauthorized;
 
   try {
     const body = await request.json().catch(() => ({}));
-    const limit = Math.max(1, Math.min(Number(body?.limit || 10), 10));
+    const requestedLimit = body?.single === true ? 1 : Number(body?.limit || DEFAULT_BATCH_LIMIT);
+    const limit = Math.max(1, Math.min(requestedLimit, 10));
+    const delayMs = Math.max(0, Math.min(Number(body?.delay_ms || DEFAULT_DELAY_MS), 90000));
     const waitAudio = Boolean(body?.wait_audio ?? false);
     const makeInstrumental = Boolean(body?.make_instrumental ?? false);
 
     const pending = getNextPendingTracks(limit);
     const results = [];
 
-    for (const row of pending) {
+    for (const [index, row] of pending.entries()) {
       try {
         updateTrackStatus(row.cancion_id, { estado: 'Generando', error_detalle: undefined });
         const prompt = buildSunoPromptFromCatalogRow(row);
@@ -132,19 +160,26 @@ export async function POST(request: NextRequest) {
           versions_received: clips.length,
           clip,
         });
+
+        if (index < pending.length - 1 && delayMs > 0) {
+          await sleep(delayMs);
+        }
       } catch (error: any) {
-        updateTrackStatus(row.cancion_id, { estado: 'Error', error_detalle: error?.message || 'Error generando canción.' });
-        results.push({ ok: false, track_id: row.cancion_id, title: row.cancion, error: error?.message || 'Error generando canción.' });
+        const message = normalizeGenerationError(error);
+        updateTrackStatus(row.cancion_id, { estado: 'Error', error_detalle: message });
+        results.push({ ok: false, track_id: row.cancion_id, title: row.cancion, error: message });
+
+        if (shouldStopBatch(message)) break;
       }
     }
 
     return NextResponse.json(
-      { ok: true, processed: results.length, selection_policy: SELECTION_POLICY, results },
+      { ok: true, processed: results.length, requested: pending.length, delay_ms: delayMs, selection_policy: SELECTION_POLICY, results },
       { status: 200, headers: getCorsHeaders(request) }
     );
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, code: 'GENERATE_PENDING_ERROR', message: error?.message || 'Error procesando pendientes.' },
+      { ok: false, code: 'GENERATE_PENDING_ERROR', message: normalizeGenerationError(error) },
       { status: 500, headers: getCorsHeaders(request) }
     );
   }
