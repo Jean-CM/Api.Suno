@@ -116,7 +116,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const requestedLimit = body?.single === true ? 1 : Number(body?.limit || DEFAULT_BATCH_LIMIT);
+    const rawLimit = Number(body?.limit || DEFAULT_BATCH_LIMIT);
+    const requestedLimit = body?.single === true ? 1 : rawLimit <= 1 ? DEFAULT_BATCH_LIMIT : rawLimit;
     const limit = Math.max(1, Math.min(requestedLimit, 10));
     const delayMs = Math.max(0, Math.min(Number(body?.delay_ms || DEFAULT_DELAY_MS), 90000));
     const waitAudio = Boolean(body?.wait_audio ?? false);
