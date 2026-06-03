@@ -128,6 +128,8 @@ const cleanError = (value?: string) => {
   return value;
 };
 
+const safeDownloadName = (value: string) => value.replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'jatune';
+
 export default function JatuneControlPanel({ initialSummary, initialTracks }: Props) {
   const [summary, setSummary] = useState<Summary>(initialSummary);
   const [tracks, setTracks] = useState<Track[]>(initialTracks);
@@ -141,6 +143,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const [filter, setFilter] = useState('Todos');
   const [exportType, setExportType] = useState('Todos');
   const [exportAlbumId, setExportAlbumId] = useState('');
+  const [masterArtist, setMasterArtist] = useState('Todos');
   const [distributionPackage, setDistributionPackage] = useState<DistributionPackage | null>(null);
   const [masterPreset, setMasterPreset] = useState('streaming_ready');
   const [masterPresets, setMasterPresets] = useState<MasterPreset[]>([]);
@@ -149,8 +152,14 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const errorTracks = tracks.filter((track) => track.estado === 'Error');
   const refreshCandidates = tracks.filter((track) => track.clip_id && (track.estado === 'Generando' || !track.audio_url));
   const exportProjects = useMemo(() => workspaces.filter((workspace) => exportType === 'Todos' || workspace.tipo === exportType), [workspaces, exportType]);
-  const selectedProjectName = exportAlbumId ? exportProjects.find((workspace) => String(workspace.album_id) === exportAlbumId)?.album || 'proyecto' : 'catalogo';
-  const audioReadyCount = tracks.filter((track) => Boolean(track.audio_url)).length;
+  const artists = useMemo(() => Array.from(new Set(tracks.map((track) => track.artista).filter(Boolean))).sort(), [tracks]);
+  const selectedProjectName = exportAlbumId ? exportProjects.find((workspace) => String(workspace.album_id) === exportAlbumId)?.album || 'proyecto' : masterArtist !== 'Todos' ? masterArtist : 'catalogo';
+  const audioReadyCount = tracks.filter((track) => {
+    const byType = exportType === 'Todos' || track.tipo === exportType;
+    const byProject = exportAlbumId ? String(track.album_id) === exportAlbumId : true;
+    const byArtist = masterArtist === 'Todos' || track.artista === masterArtist;
+    return Boolean(track.audio_url) && byType && byProject && byArtist;
+  }).length;
 
   const saveKeyPreference = (key: string, remember: boolean) => {
     if (remember && key.trim()) window.localStorage.setItem(STORAGE_KEY, key.trim());
@@ -220,7 +229,6 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     setBusy(true);
     setMessage('Generando audio 1/1...');
     saveKeyPreference(apiKey, rememberKey);
-
     try {
       const data = await apiRequest('/api/catalog/generate-pending', {
         method: 'POST',
@@ -310,7 +318,7 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedProjectName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'jatune'}-audios-mp3.zip`;
+      a.download = `${safeDownloadName(selectedProjectName)}-audios-mp3.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -327,12 +335,13 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
   const downloadMasteredZip = async () => {
     if (!requireKey()) return;
     setBusy(true);
-    setMessage('JATune Studio está masterizando. Esto puede tardar según la cantidad de audios...');
+    setMessage('JATune Studio está masterizando. El ZIP final traerá solo audios MP3 masterizados...');
     saveKeyPreference(apiKey, rememberKey);
     try {
       const payload: Record<string, string | number> = { preset: masterPreset };
       if (exportType !== 'Todos') payload.tipo = exportType;
       if (exportAlbumId) payload.album_id = Number(exportAlbumId);
+      if (masterArtist !== 'Todos') payload.artist = masterArtist;
       const response = await fetch('/api/studio/download-mastered-package', { method: 'POST', headers: buildHeaders(apiKey), body: JSON.stringify(payload) });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -342,12 +351,12 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedProjectName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'jatune'}-mastered-${masterPreset}.zip`;
+      a.download = `${safeDownloadName(selectedProjectName)}-mastered-${masterPreset}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setMessage('ZIP masterizado descargado. Revisa la carpeta mastered y el manifiesto de metadata.');
+      setMessage('ZIP masterizado descargado: solo audios MP3, sin metadata.');
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Error desconocido';
       setMessage(`Error en JATune Studio: ${detail}`);
@@ -363,6 +372,9 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
     ['Completadas', summary.completadas, 'text-emerald-300'],
     ['Errores', summary.errores, 'text-rose-300'],
   ];
+
+  const selectedPreset = masterPresets.find((preset) => preset.key === masterPreset);
+  const presetOptions = masterPresets.length ? masterPresets : [{ key: 'streaming_ready', name: 'Streaming Ready', description: '', loudnessTarget: '-14 LUFS', truePeak: '-1.5 dB', bitrate: '320k' }];
 
   return (
     <div className="space-y-6 pb-24">
@@ -408,21 +420,22 @@ export default function JatuneControlPanel({ initialSummary, initialTracks }: Pr
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-cyan-200/80">JATune Studio</p>
             <h2 className="mt-2 text-xl font-black sm:text-2xl">Masterización FFmpeg</h2>
-            <p className="mt-1 text-sm text-slate-400">Procesa los audios generados en Railway y descarga un ZIP masterizado en MP3 320 kbps. Tu PC no instala nada.</p>
+            <p className="mt-1 text-sm text-slate-400">Filtra por tipo, proyecto o artista. El ZIP final descarga solo audios MP3 masterizados, sin metadata.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
-            <select value={masterPreset} onChange={(event) => setMasterPreset(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">
-              {(masterPresets.length ? masterPresets : [{ key: 'streaming_ready', name: 'Streaming Ready', description: '', loudnessTarget: '-14 LUFS', truePeak: '-1.5 dB', bitrate: '320k' }]).map((preset) => <option key={preset.key} value={preset.key}>{preset.name}</option>)}
-            </select>
-            <button onClick={downloadMasteredZip} disabled={busy || audioReadyCount === 0} className="rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">Masterizar y descargar ZIP</button>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:min-w-[980px]">
+            <select value={exportType} onChange={(event) => { setExportType(event.target.value); setExportAlbumId(''); }} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{['Todos', 'Álbum', 'EP', 'Sencillo'].map((item) => <option key={item}>{item}</option>)}</select>
+            <select value={exportAlbumId} onChange={(event) => setExportAlbumId(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100"><option value="">Todos los proyectos</option>{exportProjects.map((workspace) => <option key={workspace.album_id} value={workspace.album_id}>{workspace.album} · {workspace.artista}</option>)}</select>
+            <select value={masterArtist} onChange={(event) => setMasterArtist(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100"><option value="Todos">Todos los artistas</option>{artists.map((artist) => <option key={artist} value={artist}>{artist}</option>)}</select>
+            <select value={masterPreset} onChange={(event) => setMasterPreset(event.target.value)} className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-slate-100">{presetOptions.map((preset) => <option key={preset.key} value={preset.key}>{preset.name}</option>)}</select>
+            <button onClick={downloadMasteredZip} disabled={busy || audioReadyCount === 0} className="rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50">Masterizar ZIP</button>
           </div>
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Audios listos</p><p className="mt-2 text-3xl font-black text-cyan-200">{audioReadyCount}</p></div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Preset</p><p className="mt-2 text-lg font-black text-white">{masterPresets.find((preset) => preset.key === masterPreset)?.name || 'Streaming Ready'}</p></div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Salida</p><p className="mt-2 text-lg font-black text-white">MP3 320 kbps · ZIP</p></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Audios filtrados</p><p className="mt-2 text-3xl font-black text-cyan-200">{audioReadyCount}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Preset</p><p className="mt-2 text-lg font-black text-white">{selectedPreset?.name || 'Streaming Ready'}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950 p-5"><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Salida</p><p className="mt-2 text-lg font-black text-white">Solo MP3 320 kbps · ZIP</p></div>
         </div>
-        {masterPresets.find((preset) => preset.key === masterPreset) && <p className="mt-4 text-sm text-slate-400">{masterPresets.find((preset) => preset.key === masterPreset)?.description}</p>}
+        {selectedPreset && <p className="mt-4 text-sm text-slate-400">{selectedPreset.description}</p>}
       </div>
 
       {errorTracks.length > 0 && <div className="rounded-3xl border border-rose-300/20 bg-rose-300/[0.06] p-5 shadow-xl lg:p-7"><h2 className="text-xl font-black text-rose-100 sm:text-2xl">Errores recientes</h2><div className="mt-5 space-y-3">{errorTracks.slice(0, 6).map((track) => <div key={track.cancion_id} className="rounded-2xl border border-white/10 bg-slate-950 p-4"><p className="font-bold text-white">{track.artista} · {track.cancion}</p><p className="mt-2 text-sm text-rose-100/80">{cleanError(track.error_detalle)}</p></div>)}</div></div>}
