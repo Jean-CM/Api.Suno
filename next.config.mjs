@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   webpack: (config) => {
     config.module.rules.push({
       test: /\.(ttf|html)$/i,
@@ -10,6 +11,6 @@ const nextConfig = {
   experimental: {
     serverMinification: false, // the server minification unfortunately breaks the selector class names
   },
-};  
+};
 
 export default nextConfig;
